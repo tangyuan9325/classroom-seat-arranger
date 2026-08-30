@@ -314,20 +314,36 @@ function curStu(cr,name){ return cr.grid.find(c=>c.student&&c.student.name===nam
 function stateUrl(){ return `${SYNC.rawBase}/${SYNC.owner}/${SYNC.repo}/${SYNC.branch}/${SYNC.path}`; }
 function apiUrl(p){ return `${SYNC.apiBase}/repos/${SYNC.owner}/${SYNC.repo}/contents/${p}`; }
 
-async function fetchRemoteState(){
-  const r=await fetch(stateUrl()+'?cb='+Date.now(), {cache:'no-store'});
-  if(!r.ok) throw new Error('state.json 不存在或读取失败 ('+r.status+')');
-  return await r.json();
+function pagesStateUrl(){ return `${pagesUrl}data/state.json`; }
+async function fetchRawState(){
+  // 多源获取：本地(相对) > GitHub Pages > raw，任一路径成功即可
+  const sources=[
+    ()=>fetch('data/state.json?cb='+Date.now(), {cache:'no-store'}),
+    ()=>fetch(pagesStateUrl()+'?cb='+Date.now(), {cache:'no-store'}),
+    ()=>fetch(stateUrl()+'?cb='+Date.now(), {cache:'no-store'})
+  ];
+  for(const f of sources){
+    try{ const r=await f(); if(r.ok){ const j=await r.json(); if(j&&j.version) return j; } }catch(e){}
+  }
+  throw new Error('state.json 读取失败');
+}
+async function fetchApiState(){
+  const r=await fetch(apiUrl(SYNC.path), {cache:'no-store'});
+  if(!r.ok) throw new Error('API '+r.status);
+  const d=await r.json();
+  const j=JSON.parse(decodeURIComponent(escape(atob(d.content))));
+  return j;
+}
+function applyState(st){
+  roster = st.roster || roster;
+  layout = st.layout || layout;
+  current = {layout, grid:st.grid, podium:st.podium||[], score:st.score||0};
+  lastSavedAt = st.updated_at || null;
+  return true;
 }
 async function fetchState(){
-  const st=await fetchRemoteState();
-  if(st && st.version){
-    roster = st.roster || roster;
-    layout = st.layout || layout;
-    current = {layout, grid:st.grid, podium:st.podium||[], score:st.score||0};
-    lastSavedAt = st.updated_at || null;
-    return true;
-  }
+  const st=await fetchRawState();
+  if(st && st.version) return applyState(st);
   return false;
 }
 async function saveState(){
@@ -540,18 +556,28 @@ function exportCSV(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='seats.csv'; a.click();
 }
 
-// ---------- 轮询同步 ----------
+// ---------- 轮询同步（双通道：Pages 5秒 + 内容API 60秒）----------
+function syncLabel(st){
+  const t=st&&st.updated_at?new Date(st.updated_at).toLocaleTimeString('zh-CN'):'';
+  return t?('已同步 · 更新于 '+t):'已连接';
+}
 async function poll(){
   try{
-    const st=await fetchRemoteState();
+    const st=await fetchRawState();
     if(st&&st.version&&st.updated_at!==lastSavedAt&&!dirty){
-      roster=st.roster||roster; layout=st.layout||layout;
-      current={layout,grid:st.grid,podium:st.podium||[],score:st.score||0};
-      lastSavedAt=st.updated_at;
-      render();
-      setSync('已同步 · 更新于 '+new Date(st.updated_at).toLocaleTimeString('zh-CN'), true);
+      applyState(st); render();
+      setSync(syncLabel(st), true);
     }
-  }catch(e){ /* 网络错误静默 */ }
+  }catch(e){ /* 静默 */ }
+}
+async function pollApi(){
+  try{
+    const st=await fetchApiState();
+    if(st&&st.version&&st.updated_at!==lastSavedAt&&!dirty){
+      applyState(st); render();
+      setSync(syncLabel(st), true);
+    }
+  }catch(e){ /* 静默 */ }
 }
 
 // ---------- 事件 ----------
@@ -603,7 +629,8 @@ function init(){
     current=null; setSync('网站已就绪（请老师保存后同步）', false);
   }
   render();
-  // 轮询
+  // 轮询：Pages 5秒一次（重建后即新）；内容API 60秒一次（更快捕获变更）
   setInterval(poll, 5000);
+  setInterval(pollApi, 60000);
   $('viewerMsg').style.display = isAdmin?'none':'block';
 })();
