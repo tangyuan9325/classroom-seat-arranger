@@ -12,7 +12,9 @@ const SYNC = {
   branch: 'main',
   path: 'docs/data/state.json',
   rawBase: 'https://raw.githubusercontent.com',
-  apiBase: 'https://api.github.com'
+  apiBase: 'https://api.github.com',
+  jsdBase: 'https://cdn.jsdelivr.net/gh',
+  purgeBase: 'https://purge.jsdelivr.net/gh'
 };
 const pagesUrl = `https://${SYNC.owner}.github.io/${SYNC.repo}/`;
 
@@ -314,25 +316,21 @@ function curStu(cr,name){ return cr.grid.find(c=>c.student&&c.student.name===nam
 function stateUrl(){ return `${SYNC.rawBase}/${SYNC.owner}/${SYNC.repo}/${SYNC.branch}/${SYNC.path}`; }
 function apiUrl(p){ return `${SYNC.apiBase}/repos/${SYNC.owner}/${SYNC.repo}/contents/${p}`; }
 
+function jsdStateUrl(){ return `${SYNC.jsdBase}/${SYNC.owner}/${SYNC.repo}@${SYNC.branch}/${SYNC.path}`; }
 function pagesStateUrl(){ return `${pagesUrl}data/state.json`; }
 async function fetchRawState(){
-  // 多源获取：本地(相对) > GitHub Pages > raw，任一路径成功即可
+  // 多源获取并取最新 updated_at：jsDelivr(实时) + GitHub Pages(重建后) + raw(兜底)
   const sources=[
-    ()=>fetch('data/state.json?cb='+Date.now(), {cache:'no-store'}),
+    ()=>fetch(jsdStateUrl()+'?cb='+Date.now(), {cache:'no-store'}),
     ()=>fetch(pagesStateUrl()+'?cb='+Date.now(), {cache:'no-store'}),
     ()=>fetch(stateUrl()+'?cb='+Date.now(), {cache:'no-store'})
   ];
+  let best=null;
   for(const f of sources){
-    try{ const r=await f(); if(r.ok){ const j=await r.json(); if(j&&j.version) return j; } }catch(e){}
+    try{ const r=await f(); if(r.ok){ const j=await r.json(); if(j&&j.version){ if(!best||new Date(j.updated_at)>new Date(best.updated_at)) best=j; } } }catch(e){}
   }
+  if(best) return best;
   throw new Error('state.json 读取失败');
-}
-async function fetchApiState(){
-  const r=await fetch(apiUrl(SYNC.path), {cache:'no-store'});
-  if(!r.ok) throw new Error('API '+r.status);
-  const d=await r.json();
-  const j=JSON.parse(decodeURIComponent(escape(atob(d.content))));
-  return j;
 }
 function applyState(st){
   roster = st.roster || roster;
@@ -375,6 +373,8 @@ async function saveState(){
   });
   if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.message||('保存失败 '+r.status)); }
   lastSavedAt=payload.updated_at;
+  // 主动清除 jsDelivr 缓存，让访客近实时看到（失败不影响保存本身，Pages 会在重建后兜底）
+  try{ await fetch(SYNC.purgeBase+'/'+SYNC.owner+'/'+SYNC.repo+'@'+SYNC.branch+'/'+SYNC.path); }catch(e){}
   return true;
 }
 
@@ -570,15 +570,7 @@ async function poll(){
     }
   }catch(e){ /* 静默 */ }
 }
-async function pollApi(){
-  try{
-    const st=await fetchApiState();
-    if(st&&st.version&&st.updated_at!==lastSavedAt&&!dirty){
-      applyState(st); render();
-      setSync(syncLabel(st), true);
-    }
-  }catch(e){ /* 静默 */ }
-}
+// 内容API 因未登录速率限制(60/h)不可靠，改由 jsDelivr + Pages 双 CDN 轮询保证实时
 
 // ---------- 事件 ----------
 function init(){
@@ -629,8 +621,7 @@ function init(){
     current=null; setSync('网站已就绪（请老师保存后同步）', false);
   }
   render();
-  // 轮询：Pages 5秒一次（重建后即新）；内容API 60秒一次（更快捕获变更）
+  // 轮询：5秒一次，jsDelivr（老师保存已清缓存，近实时）+ Pages（重建后兜底）
   setInterval(poll, 5000);
-  setInterval(pollApi, 60000);
   $('viewerMsg').style.display = isAdmin?'none':'block';
 })();
