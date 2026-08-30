@@ -2,6 +2,10 @@
 
 一个**编译型语言（Go）**编写、单文件、跨平台、可离线运行的班级智能排座软件。双击即用，自动打开浏览器（现代玻璃拟态 UI），无需安装任何环境。
 
+## 界面预览
+
+![班级排座位系统界面预览](docs/screenshot.png)
+
 ## 功能
 
 - **贴合班主任要求的内置布局**：中间 4 列 × 6 行 + 旁边 4 列 × 5 行 = 44 座（第 6 排只坐中间），9 名女生排中间两列（5+4，最后一名单独），其余 6 列为男生。
@@ -20,7 +24,7 @@
 
 ### Windows（推荐）
 
-1. 从 GitHub Releases 下载 `班级排座位-Windows-x64.exe`。
+1. 从 GitHub Releases 下载 `SeatArranger-Windows-x64.exe`。
 2. 双击运行，浏览器自动打开 `http://127.0.0.1:8017/`。
 3. 点击「✨ 生成排位」得到初始排座；可用「轮换」实现公平轮换；「导入调查数据」可结合问卷偏好智能排座。
 
@@ -75,7 +79,7 @@ name,gender,no,seatmate_pref,single_desk,row_pref,col_pref,weight_seatmate,weigh
 go run . -port 8017
 
 # 交叉编译 Windows .exe
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/班级排座位-Windows-x64.exe .
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/SeatArranger-Windows-x64.exe .
 
 # 编译 Linux / macOS
 GOOS=linux  GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/seat-arranger-linux-amd64 .
