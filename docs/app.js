@@ -551,7 +551,7 @@ function exportCSV(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='seats.csv'; a.click();
 }
 
-// ---------- 轮询同步（双通道：Pages 5秒 + 内容API 60秒）----------
+// ---------- 轮询同步（Pages + raw 双源取最新）----------
 function syncLabel(st){
   const t=st&&st.updated_at?new Date(st.updated_at).toLocaleTimeString('zh-CN'):'';
   return t?('已同步 · 更新于 '+t):'已连接';
@@ -565,7 +565,7 @@ async function poll(){
     }
   }catch(e){ /* 静默 */ }
 }
-// 内容API 因未登录速率限制(60/h)不可靠，改由 jsDelivr + Pages 双 CDN 轮询保证实时
+// （注：内容API 未登录有 60/h 速率限制，不用于轮询）
 
 // ---------- 事件 ----------
 function init(){
