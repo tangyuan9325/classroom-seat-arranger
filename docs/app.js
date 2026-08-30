@@ -516,7 +516,7 @@ function renderRequests(){
   shown.forEach(r=>{
     const div=document.createElement('div'); div.className='req-item';
     const who=document.createElement('div'); who.className='who';
-    who.textContent = r.from+' 想与 '+r.to+' 换座位';
+    who.textContent = r.target ? (r.from+' 申请调至空位') : (r.from+' 想与 '+r.to+' 换座位');
     const meta=document.createElement('div'); meta.className='meta';
     meta.textContent='发起于 '+new Date(r.at).toLocaleString('zh-CN',{hour12:false});
     div.append(who, meta);
@@ -529,7 +529,7 @@ function renderRequests(){
       no.onclick=()=>rejectRequest(r.id);
       btns.append(ok,no);
     } else {
-      const wait=document.createElement('div'); wait.className='tip'; wait.textContent='等待对方同意…';
+      const wait=document.createElement('div'); wait.className='tip'; wait.textContent=r.target?'等待班主任批准…':'等待对方同意…';
       btns.append(wait);
     }
     div.append(btns); el.appendChild(div);
@@ -558,11 +558,12 @@ async function acceptRequest(id){
     const rr=st.pending_requests.find(x=>x.id===id);
     if(!rr||rr.status!=='pending') return;
     const cr={layout:st.layout, grid:st.grid, podium:st.podium||[]};
-    doSwapRoom(cr, rr.from, rr.to);
+    if(rr.target){ moveToEmptyCell(cr, rr.from, rr.target.row, rr.target.col); }
+    else { doSwapRoom(cr, rr.from, rr.to); }
     st.grid=cr.grid; st.podium=cr.podium;
     rr.status='done';
   });
-  toast('换座成功：'+r.from+' 与 '+r.to+' 已互换 ✓');
+  toast(r.target ? ('已同意：「'+r.from+'」已调至空位 ✓') : ('换座成功：'+r.from+' 与 '+r.to+' 已互换 ✓'));
   render(); renderRequests();
 }
 async function rejectRequest(id){
@@ -753,6 +754,11 @@ function render(){
         if(layout.middle_cols.includes(c)) el.classList.add('middle');
         const nm=document.createElement('div'); nm.className='nm'; nm.textContent='空';
         el.append(nm);
+        // 空位可点击：老师/管理员先选学生再点空位 → 移入；学生点空位 → 申请调座
+        el.addEventListener('click',()=>onSeatClick('',c,r));
+        el.title = (me&&isTeacherOrAdmin())
+          ? '空位：先点一名学生，再点这里可将其移入'
+          : '空位：点击可申请调到这里（需班主任批准）';
       }
       grid.appendChild(el);
     }
@@ -770,12 +776,21 @@ function render(){
     $('mySeatText').textContent = pos? (pos.grid?('第'+(pos.grid.seat.row+1)+'排 第'+(pos.grid.seat.col+1)+'列'):'讲台旁') : '未分配';
   }
 }
-async function onSeatClick(name){
+async function onSeatClick(name, c, r){
   if(!me) return;
   if(isTeacherOrAdmin()){
+    // 讲台空位（无坐标）维持原提示
+    if(name===null){ toast('请选择学生座位', true); return; }
+    if(name===''){
+      // 座位空位：已选中学生时点空位 → 移入
+      if(!selected){ toast('先点一名学生，再点这个空位即可将其移入', true); return; }
+      const a=selected; selected=null; render();
+      const y=await askConfirm('把「'+a+'」移入这个空位？（无视规则）');
+      if(y) moveToEmpty(a, r, c);
+      return;
+    }
     // 强制互换：选择两名
-    if(!name){ toast('请选择学生座位', true); return; }
-    if(!selected){ selected=name; toast('已选「'+name+'」，再点一名学生即可互换（或点自己取消）', false); render(); return; }
+    if(!selected){ selected=name; toast('已选「'+name+'」，再点一名学生或空位即可互换（点自己取消）', false); render(); return; }
     if(selected===name){ selected=null; render(); return; }
     const a=selected; selected=null; render();
     const y=await askConfirm('强制互换「'+a+'」与「'+name+'」？（无视一切规则）');
@@ -784,6 +799,18 @@ async function onSeatClick(name){
   }
   // 学生：点击他人发起换座申请
   if(name===me.name){ toast('这是你的座位', true); return; }
+  if(name===''){
+    // 学生：申请调到空位（需班主任批准）
+    if(isPodiumGuard(me.name)||isFixedPairMember(me.name)||isAloneStudent(me.name)){ toast('你的座位受规则保护，不可申请调座', true); return; }
+    const myStu=roster.find(x=>x.name===me.name);
+    if(myStu&&myStu.gender==='男'&&layout.girl_cols.includes(c)){ toast('男生不能申请调到女生区空位', true); return; }
+    const pending=(S&&S.pending_requests)||[];
+    const dup=pending.some(x=>x.status==='pending' && x.from===me.name && x.to==='（空位）');
+    if(dup){ toast('你已有待班主任批准的调座申请', true); return; }
+    const y=await askConfirm('申请调到这个空位？（需班主任批准后生效）');
+    if(y) requestSwapToEmpty(r, c);
+    return;
+  }
   if(!name){ toast('空座位，无法申请', true); return; }
   const y=await askConfirm('向「'+name+'」发起换座申请？');
   if(y) requestSwap(name);
@@ -796,6 +823,39 @@ async function forceSwapAB(a,b){
   });
   toast('已强制互换 '+a+' 与 '+b+' ✓');
   render();
+}
+// 把 name 移入 (row,col) 空位
+function moveToEmptyCell(cr, name, row, col){
+  const cell=cr.grid.find(x=>x.seat.row===row && x.seat.col===col && (!x.student||x.empty));
+  if(!cell) return false;
+  const p1=findPos(cr,name);
+  if(!p1) return false;
+  if(p1.grid){
+    cell.student=p1.grid.student; cell.empty=false;
+    p1.grid.student=undefined; p1.grid.empty=true;
+  } else {
+    cell.student=cr.podium[p1.podium].student; cell.empty=false;
+    cr.podium[p1.podium].student=undefined;
+  }
+  return true;
+}
+async function moveToEmpty(a, r, c){
+  let ok=false;
+  await readModifyWrite(st=>{
+    const cr={layout:st.layout, grid:st.grid, podium:st.podium||[]};
+    ok=moveToEmptyCell(cr, a, r, c);
+    if(ok){ st.grid=cr.grid; st.podium=cr.podium; }
+  });
+  if(ok){ toast('已将「'+a+'」移入空位 ✓'); render(); }
+  else toast('操作失败：学生或空位不存在', true);
+}
+// 学生申请调到空位（班主任批准后生效）
+async function requestSwapToEmpty(r,c){
+  await readModifyWrite(st=>{
+    st.pending_requests.push({id:'r'+Date.now(), from:me.name, to:'（空位）', target:{row:r,col:c}, at:new Date().toISOString(), status:'pending'});
+  });
+  toast('已申请调至空位，等待班主任批准 ✓');
+  renderRequests();
 }
 
 // ---------- 轮询 ----------

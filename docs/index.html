@@ -133,7 +133,8 @@
   .seat .sub{font-size:10.5px; color:var(--ink-dim);}
   .seat.girl{border-color:rgba(255,143,176,0.6); background:var(--rose-soft);}
   .seat.boy{border-color:rgba(127,182,255,0.6); background:var(--blue-soft);}
-  .seat.empty{background:rgba(255,255,255,0.04); border-style:dashed; cursor:default;}
+  .seat.empty{background:rgba(255,255,255,0.04); border-style:dashed; cursor:pointer; transition:border-color .2s, background .2s, transform .2s;}
+  .seat.empty:hover{border-color:rgba(143,224,160,0.6); background:rgba(143,224,160,0.08); transform:translateY(-3px);}
   .seat.empty .nm{color:rgba(255,255,255,0.18); font-weight:400;}
   .seat.middle::after{content:""; position:absolute; inset:3px; border:1px solid rgba(255,255,255,0.10); border-radius:13px; pointer-events:none;}
   .seat.selected{border-color:#fff; box-shadow:0 0 0 2px rgba(255,255,255,0.9), 0 10px 26px rgba(0,0,0,0.4); transform:translateY(-3px) scale(1.04);}
