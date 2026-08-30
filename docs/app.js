@@ -693,8 +693,6 @@ function renderPanel(){
     del.onclick=()=>deleteRosterRow(s.name);
     row.append(no,g,nm,del); rl.appendChild(row);
   });
-  // 登录提示里的班主任名字
-  $('hintTeacher').textContent=getTeacher();
   // 底部角色提示
   const msg=$('roleMsg');
   if(me){
