@@ -557,6 +557,8 @@ function syncLabel(st){
   return t?('已同步 · 更新于 '+t):'已连接';
 }
 async function poll(){
+  const chk=document.getElementById('lastCheck');
+  if(chk) chk.textContent='检测于 '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
   try{
     const st=await fetchRawState();
     if(st&&st.version&&st.updated_at!==lastSavedAt&&!dirty){
@@ -617,6 +619,8 @@ function init(){
   }
   render();
   // 轮询：5秒一次，Pages + raw 双源取最新（老师保存后 Pages 自动重建，约1-2分钟内访客看到）
+  const chk=document.createElement('span'); chk.id='lastCheck'; chk.style.cssText='font-size:11px;color:#8fa0c0;margin-left:8px';
+  const stEl=document.getElementById('syncStatus'); if(stEl) stEl.appendChild(chk);
   setInterval(poll, 5000);
   $('viewerMsg').style.display = isAdmin?'none':'block';
 })();
