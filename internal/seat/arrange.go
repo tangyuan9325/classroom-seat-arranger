@@ -29,7 +29,7 @@ func DefaultOptions() Options {
 	}
 }
 
-// Arrange 生成一份座位安排。
+// Arrange 生成一份座位安排（遵守固定座位规则）。
 func Arrange(sts []*Student, layout Layout, opt Options) *ClassRoom {
 	if opt.Iterations <= 0 {
 		opt.Iterations = 4000
@@ -45,22 +45,19 @@ func Arrange(sts []*Student, layout Layout, opt Options) *ClassRoom {
 	return cr
 }
 
-// buildInitial 构造一个初始可行解：女生入女生列，男生入其余列。
-func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
-	// 按列分座
-	type colSeats struct {
-		col   int
-		seats []Seat // 该列座位，按行升序（前排在前）
-	}
+// colSeatsOf 按列分座。
+func colSeatsOf(layout Layout) (map[int][]Seat, []int) {
 	colMap := map[int][]Seat{}
-	var order []int
 	for _, s := range layout.Seats() {
 		colMap[s.Col] = append(colMap[s.Col], s)
 	}
-	// 稳定列顺序：女生列优先列出
+	for c := range colMap {
+		sort.Slice(colMap[c], func(i, j int) bool { return colMap[c][i].Row < colMap[c][j].Row })
+	}
+	// 稳定列顺序：女生列优先
 	seen := map[int]bool{}
+	var order []int
 	for _, c := range layout.GirlCols {
-		colMap[c] = colMap[c]
 		order = append(order, c)
 		seen[c] = true
 	}
@@ -69,94 +66,141 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 			order = append(order, c)
 		}
 	}
-	// 每列座位按行升序
-	for c := range colMap {
-		sort.Slice(colMap[c], func(i, j int) bool { return colMap[c][i].Row < colMap[c][j].Row })
-	}
+	return colMap, order
+}
 
-	var girls, boys []*Student
+// buildInitial 构造一个初始可行解：女生入女生列（遵守固定同桌/单人），男生入其余列。
+func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
+	fixed := layout.Fixed
+	colMap, order := colSeatsOf(layout)
+
+	// 1) 取出讲台旁学生
+	var podium *Student
+	pool := make([]*Student, 0, len(sts))
 	for i := range sts {
-		if sts[i].Gender == "女" {
-			girls = append(girls, sts[i])
+		if fixed.PodiumSeat != "" && sts[i].Name == fixed.PodiumSeat {
+			podium = sts[i]
 		} else {
-			boys = append(boys, sts[i])
+			pool = append(pool, sts[i])
 		}
 	}
 
-	// 每列分配的座位（女生列也可能因溢出容纳男生）
-	assign := map[string]*Seat{} // name -> seat
-	used := map[Seat]bool{}
-
-	// 女生填入女生列：优先前排，两列交替，最后一排单人
-	girlSeats := []Seat{}
-	for _, c := range layout.GirlCols {
-		girlSeats = append(girlSeats, colMap[c]...)
-	}
-	// 女生列座位按“列交替 + 行前到后”排序：把女生均匀铺进两列
-	placeGirls := func(g []*Student) {
-		if len(g) == 0 {
-			return
-		}
-		if opt.Randomize {
-			Shuffle(g, opt.RNG)
-		} else if opt.UseHeight {
-			// 高个靠后：行从后往前填
-		}
-		// 排序女生座位：第一列前排优先，第二列前排优先（交替两列便于同桌）
-		seatOrder := []Seat{}
-		for r := 0; r < layout.Rows; r++ {
-			for _, c := range layout.GirlCols {
-				for _, s := range colMap[c] {
-					if s.Row == r {
-						seatOrder = append(seatOrder, s)
-					}
-				}
-			}
-		}
-		// 高个靠后 -> 把学生按身高升序（矮在前）放入前排优先的座位序列
-		ordered := make([]*Student, len(g))
-		copy(ordered, g)
-		if opt.UseHeight && !opt.Randomize {
-			sort.SliceStable(ordered, func(i, j int) bool {
-				a, b := ordered[i].Height, ordered[j].Height
-				if a == b {
-					return false
-				}
-				return a < b
-			})
-		}
-		// 若启用“最后一排单人”：把最后一名女生单独放到最后一排中间列
-		seatOrder = seatOrder[:len(ordered)]
-		if layout.GirlLastAlone && !opt.Randomize && len(ordered) >= 1 {
-			// 找到女生列中行号最大的座位
-			maxRow := -1
-			var lastSeat Seat
-			for _, s := range seatOrder {
-				if s.Row > maxRow {
-					maxRow = s.Row
-					lastSeat = s
-				}
-			}
-			// 把 lastSeat 与 seatOrder 最后一位交换，使最后一名女生单人坐最后排
-			for i := range seatOrder {
-				if seatOrder[i] == lastSeat {
-					seatOrder[i], seatOrder[len(seatOrder)-1] = seatOrder[len(seatOrder)-1], seatOrder[i]
-					break
-				}
-			}
-		}
-		for i, s := range seatOrder {
-			assign[ordered[i].Name] = &seatOrder[i]
-			used[s] = true
+	// 2) 性别分组
+	var girls, boys []*Student
+	for i := range pool {
+		if pool[i].Gender == "女" {
+			girls = append(girls, pool[i])
+		} else {
+			boys = append(boys, pool[i])
 		}
 	}
-	placeGirls(girls)
 
-	// 男生填入其余列（含女生列剩余空位）
-	restSeats := []Seat{}
+	// 3) 女生配对/单人
+	//    固定同桌 + 其余按偏好/身高配对；单人（Alone）单独一列
+	fixedPairSet := map[string]string{} // name -> partner
+	for _, p := range fixed.FixedPairs {
+		if len(p) == 2 {
+			fixedPairSet[p[0]] = p[1]
+			fixedPairSet[p[1]] = p[0]
+		}
+	}
+	aloneSet := map[string]bool{}
+	for _, n := range fixed.Alone {
+		aloneSet[n] = true
+	}
+
+	// 女生列座位：两列对应行 = 一个同桌组
+	girlSeatRows := pairRowsOf(layout, colMap)
+
+	// 需要占用的行：成对占1行，单人占1行
+	type girlSlot struct {
+		members []*Student // 成对2人或单人1人
+		alone   bool
+	}
+	var slots []girlSlot
+	used := map[string]bool{}
+	// 固定同桌
+	for _, p := range fixed.FixedPairs {
+		var pair []*Student
+		for _, n := range p {
+			if st := findStudent(girls, n); st != nil {
+				pair = append(pair, st)
+				used[n] = true
+			}
+		}
+		if len(pair) >= 1 {
+			slots = append(slots, girlSlot{members: pair, alone: len(pair) == 1})
+		}
+	}
+	// 单人
+	for _, n := range fixed.Alone {
+		if st := findStudent(girls, n); st != nil && !used[n] {
+			slots = append(slots, girlSlot{members: []*Student{st}, alone: true})
+			used[n] = true
+		}
+	}
+	// 其余女生按偏好配对
+	var rest []*Student
+	for i := range girls {
+		if !used[girls[i].Name] {
+			rest = append(rest, girls[i])
+		}
+	}
+	if opt.Randomize {
+		Shuffle(rest, opt.RNG)
+	} else if opt.UsePref {
+		rest = pairByPref(rest)
+	} else if opt.UseHeight {
+		sort.SliceStable(rest, func(i, j int) bool {
+			a, b := rest[i].Height, rest[j].Height
+			if a == b {
+				return false
+			}
+			return a < b
+		})
+	}
+	for i := 0; i < len(rest); i += 2 {
+		m := []*Student{rest[i]}
+		if i+1 < len(rest) {
+			m = append(m, rest[i+1])
+		}
+		slots = append(slots, girlSlot{members: m, alone: len(m) == 1})
+	}
+
+	// 4) 分配女生座位
+	assign := map[string]Seat{} // name -> seat
+	usedSeat := map[Seat]bool{}
+	// girlSeatRows 每行：{colA, colB}
+	usedGirlRows := 0
+	for _, slot := range slots {
+		if usedGirlRows >= len(girlSeatRows) {
+			break
+		}
+		row := girlSeatRows[usedGirlRows]
+		usedGirlRows++
+		// 成对：放两列；单人：放第一列，第二列留空（预留空位，防止男生补入）
+		if slot.alone {
+			assign[slot.members[0].Name] = Seat{Row: row.row, Col: row.colA}
+			usedSeat[Seat{Row: row.row, Col: row.colA}] = true
+			// 同桌位留空：标记为已用（空），不让其他学生坐进来
+			usedSeat[Seat{Row: row.row, Col: row.colB}] = true
+		} else {
+			for i, m := range slot.members {
+				c := row.colA
+				if i == 1 {
+					c = row.colB
+				}
+				assign[m.Name] = Seat{Row: row.row, Col: c}
+				usedSeat[Seat{Row: row.row, Col: c}] = true
+			}
+		}
+	}
+
+	// 5) 男生放入其余座位（含女生列剩余空位）
+	var restSeats []Seat
 	for _, c := range order {
 		for _, s := range colMap[c] {
-			if !used[s] {
+			if !usedSeat[s] {
 				restSeats = append(restSeats, s)
 			}
 		}
@@ -178,11 +222,11 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 		if i >= len(ordered) {
 			break
 		}
-		assign[ordered[i].Name] = &restSeats[i]
-		used[s] = true
+		assign[ordered[i].Name] = s
+		usedSeat[s] = true
 	}
 
-	// 组装网格
+	// 6) 组装网格
 	cr := &ClassRoom{Layout: layout}
 	for _, s := range layout.Seats() {
 		cell := SeatCell{Seat: s, Empty: true}
@@ -192,7 +236,7 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 	}
 	for name, seat := range assign {
 		for i := range cr.Grid {
-			if cr.Grid[i].Seat == *seat {
+			if cr.Grid[i].Seat == seat {
 				for j := range sts {
 					if sts[j].Name == name {
 						cr.Grid[i].Student = sts[j]
@@ -203,7 +247,95 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 			}
 		}
 	}
+	// 讲台旁座位
+	if podium != nil {
+		cr.Podium = []SeatCell{{
+			Seat:    Seat{Row: 0, Col: -1}, // 特殊标记
+			Student: podium,
+			Empty:   false,
+		}}
+	}
 	return cr
+}
+
+// pairRowsOf 女生列可用的成对行（每行两列都有座）。
+type girlRow struct {
+	row  int
+	colA int
+	colB int
+}
+
+func pairRowsOf(layout Layout, colMap map[int][]Seat) []girlRow {
+	if len(layout.GirlCols) < 2 {
+		return nil
+	}
+	colA, colB := layout.GirlCols[0], layout.GirlCols[1]
+	seatsA := map[int]bool{}
+	for _, s := range colMap[colA] {
+		seatsA[s.Row] = true
+	}
+	seatsB := map[int]bool{}
+	for _, s := range colMap[colB] {
+		seatsB[s.Row] = true
+	}
+	var out []girlRow
+	for r := 0; r < layout.Rows; r++ {
+		if seatsA[r] && seatsB[r] {
+			out = append(out, girlRow{row: r, colA: colA, colB: colB})
+		}
+	}
+	return out
+}
+
+func findStudent(sts []*Student, name string) *Student {
+	for i := range sts {
+		if sts[i].Name == name {
+			return sts[i]
+		}
+	}
+	return nil
+}
+
+// pairByPref 按期望同桌互选贪心配对。
+func pairByPref(sts []*Student) []*Student {
+	idx := map[string]int{}
+	for i := range sts {
+		idx[sts[i].Name] = i
+	}
+	paired := map[string]bool{}
+	var order []*Student
+	for i := range sts {
+		if paired[sts[i].Name] {
+			continue
+		}
+		order = append(order, sts[i])
+		// 找最佳配对
+		best := -1
+		if opt := sts[i].SeatmatePref; len(opt) > 0 {
+			for _, n := range opt {
+				if j, ok := idx[n]; ok && !paired[n] && j != i {
+					// 检查互选
+					recip := false
+					for _, n2 := range sts[j].SeatmatePref {
+						if n2 == sts[i].Name {
+							recip = true
+							break
+						}
+					}
+					if recip || true {
+						best = j
+						break
+					}
+				}
+			}
+		}
+		if best >= 0 {
+			order = append(order, sts[best])
+			paired[sts[best].Name] = true
+		}
+		paired[sts[i].Name] = true
+	}
+	return order
 }
 
 // score 评分：同桌匹配 + 位置偏好 + 身高。
@@ -234,10 +366,8 @@ func score(cr *ClassRoom, opt Options) float64 {
 				if nbSt == nil {
 					continue
 				}
-				// 学生在对方的期望同桌列表中的名次（越靠前分越高）
 				if prefRank, ok := prefRankOf(st.SeatmatePref, nbSt.Name); ok {
 					gain := 1.0 / float64(prefRank+1)
-					// 互相心仪加成
 					if _, ok2 := prefRankOf(nbSt.SeatmatePref, st.Name); ok2 {
 						gain *= opt.Weights.Mutual
 					}
@@ -245,7 +375,7 @@ func score(cr *ClassRoom, opt Options) float64 {
 				}
 			}
 		}
-		// 2) 单人单桌：若期望单人，则奖励两侧无同桌（同桌=相邻有人）
+		// 2) 单人单桌：两侧无同桌奖励
 		if opt.UsePref && st.SingleDesk {
 			alone := true
 			for _, nb := range cr.Layout.NeighborSeats(s) {
@@ -282,7 +412,6 @@ func score(cr *ClassRoom, opt Options) float64 {
 		// 4) 身高：高个在前排扣分
 		if opt.UseHeight && st.Height > 0 {
 			rowDepth := s.Row
-			// 期望高个靠后：身高每超过均值一个标准差对应行，前排则扣分
 			if rowDepth < cr.Layout.Rows/2 {
 				total -= opt.Weights.Height * (st.Height / 100.0) * 0.5
 			}
@@ -314,13 +443,13 @@ func prefRankOf(pref []string, name string) (int, bool) {
 }
 
 // optimize 局部搜索优化：随机交换同性别学生，保留更优解。
+// 讲台旁座位学生不参与交换。
 func optimize(cr *ClassRoom, opt Options) *ClassRoom {
 	best := cloneRoom(cr)
 	bestScore := score(best, opt)
 	cur := cloneRoom(cr)
 	curScore := bestScore
 
-	// 收集每位学生的位置
 	type occ struct {
 		name string
 		cell *SeatCell
@@ -332,7 +461,6 @@ func optimize(cr *ClassRoom, opt Options) *ClassRoom {
 		}
 	}
 	for it := 0; it < opt.Iterations; it++ {
-		// 随机选两个同性别学生交换
 		i := opt.RNG.Intn(len(occs))
 		j := opt.RNG.Intn(len(occs))
 		if i == j {
@@ -342,7 +470,6 @@ func optimize(cr *ClassRoom, opt Options) *ClassRoom {
 		if a.cell.Student.Gender != b.cell.Student.Gender {
 			continue
 		}
-		// 尝试交换
 		a.cell.Student, b.cell.Student = b.cell.Student, a.cell.Student
 		ns := score(cur, opt)
 		if ns >= curScore {
@@ -352,7 +479,6 @@ func optimize(cr *ClassRoom, opt Options) *ClassRoom {
 				best = cloneRoom(cur)
 			}
 		} else {
-			// 回退
 			a.cell.Student, b.cell.Student = b.cell.Student, a.cell.Student
 		}
 	}
@@ -364,5 +490,6 @@ func cloneRoom(cr *ClassRoom) *ClassRoom {
 	for i := range cr.Grid {
 		nc.Grid[i] = cr.Grid[i]
 	}
+	nc.Podium = append([]SeatCell{}, cr.Podium...)
 	return nc
 }
