@@ -10,7 +10,7 @@ const SYNC = {
   owner: 'tangyuan9325',
   repo: 'classroom-seat-arranger',
   branch: 'main',
-  path: 'site/data/state.json',
+  path: 'docs/data/state.json',
   rawBase: 'https://raw.githubusercontent.com',
   apiBase: 'https://api.github.com'
 };
@@ -587,7 +587,7 @@ function init(){
   init();
   // 尝试读取名单
   try{
-    const r=await fetch(`${SYNC.rawBase}/${SYNC.owner}/${SYNC.repo}/${SYNC.branch}/site/data/roster.json?cb=`+Date.now(), {cache:'no-store'});
+    const r=await fetch(`${SYNC.rawBase}/${SYNC.owner}/${SYNC.repo}/${SYNC.branch}/docs/data/roster.json?cb=`+Date.now(), {cache:'no-store'});
     if(r.ok) roster=await r.json();
   }catch(e){}
   if(!roster||!roster.length){
