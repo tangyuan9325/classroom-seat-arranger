@@ -12,9 +12,7 @@ const SYNC = {
   branch: 'main',
   path: 'docs/data/state.json',
   rawBase: 'https://raw.githubusercontent.com',
-  apiBase: 'https://api.github.com',
-  jsdBase: 'https://cdn.jsdelivr.net/gh',
-  purgeBase: 'https://purge.jsdelivr.net/gh'
+  apiBase: 'https://api.github.com'
 };
 const pagesUrl = `https://${SYNC.owner}.github.io/${SYNC.repo}/`;
 
@@ -316,12 +314,10 @@ function curStu(cr,name){ return cr.grid.find(c=>c.student&&c.student.name===nam
 function stateUrl(){ return `${SYNC.rawBase}/${SYNC.owner}/${SYNC.repo}/${SYNC.branch}/${SYNC.path}`; }
 function apiUrl(p){ return `${SYNC.apiBase}/repos/${SYNC.owner}/${SYNC.repo}/contents/${p}`; }
 
-function jsdStateUrl(){ return `${SYNC.jsdBase}/${SYNC.owner}/${SYNC.repo}@${SYNC.branch}/${SYNC.path}`; }
 function pagesStateUrl(){ return `${pagesUrl}data/state.json`; }
 async function fetchRawState(){
-  // 多源获取并取最新 updated_at：jsDelivr(实时) + GitHub Pages(重建后) + raw(兜底)
+  // 双源获取并取最新 updated_at：GitHub Pages(自动重建) + raw(兜底)
   const sources=[
-    ()=>fetch(jsdStateUrl()+'?cb='+Date.now(), {cache:'no-store'}),
     ()=>fetch(pagesStateUrl()+'?cb='+Date.now(), {cache:'no-store'}),
     ()=>fetch(stateUrl()+'?cb='+Date.now(), {cache:'no-store'})
   ];
@@ -373,8 +369,7 @@ async function saveState(){
   });
   if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.message||('保存失败 '+r.status)); }
   lastSavedAt=payload.updated_at;
-  // 主动清除 jsDelivr 缓存，让访客近实时看到（失败不影响保存本身，Pages 会在重建后兜底）
-  try{ await fetch(SYNC.purgeBase+'/'+SYNC.owner+'/'+SYNC.repo+'@'+SYNC.branch+'/'+SYNC.path); }catch(e){}
+  // 保存成功后 GitHub Pages 会自动重建（约 1-2 分钟），访客轮询到新版本即自动更新
   return true;
 }
 
@@ -621,7 +616,7 @@ function init(){
     current=null; setSync('网站已就绪（请老师保存后同步）', false);
   }
   render();
-  // 轮询：5秒一次，jsDelivr（老师保存已清缓存，近实时）+ Pages（重建后兜底）
+  // 轮询：5秒一次，Pages + raw 双源取最新（老师保存后 Pages 自动重建，约1-2分钟内访客看到）
   setInterval(poll, 5000);
   $('viewerMsg').style.display = isAdmin?'none':'block';
 })();
