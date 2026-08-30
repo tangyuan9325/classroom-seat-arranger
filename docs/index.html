@@ -67,7 +67,9 @@
   .btn.primary:hover{filter:brightness(1.08);}
   .btn.gold{background:linear-gradient(135deg,rgba(255,210,127,.8),rgba(255,150,120,.8)); border:none; color:#fff; font-weight:600;}
   .btn.green{background:linear-gradient(135deg,rgba(110,220,160,.85),rgba(90,180,255,.85)); border:none; color:#fff; font-weight:600;}
+  .btn.red{background:linear-gradient(135deg,rgba(255,120,120,.9),rgba(255,90,140,.85)); border:none; color:#fff; font-weight:600;}
   .btn.small{padding:8px 10px; font-size:12.5px;}
+  .btn.mini{padding:5px 9px; font-size:12px; width:auto;}
   .btn-row{display:flex; gap:8px;}
   .btn-row .btn{flex:1;}
   .opt{display:flex; align-items:center; justify-content:space-between; padding:8px 4px; font-size:13px; color:var(--ink);}
@@ -77,11 +79,11 @@
   .sl:before{content:""; position:absolute; width:16px; height:16px; left:3px; top:3px; border-radius:50%; background:#fff; transition:.25s;}
   .switch input:checked + .sl{background:linear-gradient(135deg,#ff8fb0,#7fb6ff);}
   .switch input:checked + .sl:before{transform:translateX(18px);}
-  input[type=text], input[type=number], input[type=password], select{
+  input[type=text], input[type=number], input[type=password], select, textarea{
     background:rgba(255,255,255,0.14); border:1px solid var(--stroke); color:var(--ink);
     border-radius:10px; padding:7px 9px; font-size:13px; width:100%; font-family:inherit; outline:none;
   }
-  input:focus, select:focus{border-color:rgba(255,255,255,0.6);}
+  input:focus, select:focus, textarea:focus{border-color:rgba(255,255,255,0.6);}
   label{font-size:12px; color:var(--ink-dim); display:block; margin-bottom:4px;}
   .collapse{border-top:1px dashed rgba(255,255,255,0.18); padding-top:12px;}
   .file-input{position:relative;}
@@ -94,7 +96,7 @@
     position:fixed; top:20px; left:50%; transform:translateX(-50%) translateY(-80px);
     background:var(--glass-strong); border:1px solid var(--stroke); color:var(--ink);
     padding:12px 22px; border-radius:14px; backdrop-filter:blur(18px); z-index:99;
-    transition:transform .3s; font-size:14px; box-shadow:var(--shadow);
+    transition:transform .3s; font-size:14px; box-shadow:var(--shadow); max-width:90vw;
   }
   .toast.show{transform:translateX(-50%) translateY(0);}
   .toast.err{border-color:rgba(255,120,120,.7);}
@@ -108,7 +110,7 @@
     background:linear-gradient(135deg,rgba(255,255,255,0.16),rgba(255,255,255,0.08));
     border:1px solid var(--stroke); font-size:13px; letter-spacing:6px; color:var(--ink-dim);
   }
-  .podium-area{display:flex; justify-content:flex-start; padding:4px 12px 8px 12px;}
+  .podium-area{display:flex; justify-content:flex-start; padding:4px 12px 8px 12px; gap:14px; align-items:stretch;}
   .podium-seat{
     min-width:120px; min-height:56px; border-radius:14px; padding:8px 14px; text-align:center;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
@@ -116,6 +118,7 @@
   }
   .podium-seat .nm{font-size:14px; font-weight:700; color:#ffe9bd;}
   .podium-seat .sub{font-size:10.5px; color:rgba(255,233,189,0.75);}
+  .podium-empty{min-width:120px; min-height:56px; border-radius:14px; border:1px dashed rgba(255,210,127,0.5); display:flex; align-items:center; justify-content:center; font-size:12px; color:rgba(255,233,189,0.5);}
   .grid-wrap{padding:18px; overflow-x:auto;}
   .grid{display:grid; gap:14px; min-width:880px; margin:0 auto; justify-content:center;}
   .seat{
@@ -134,16 +137,55 @@
   .seat.empty .nm{color:rgba(255,255,255,0.18); font-weight:400;}
   .seat.middle::after{content:""; position:absolute; inset:3px; border:1px solid rgba(255,255,255,0.10); border-radius:13px; pointer-events:none;}
   .seat.selected{border-color:#fff; box-shadow:0 0 0 2px rgba(255,255,255,0.9), 0 10px 26px rgba(0,0,0,0.4); transform:translateY(-3px) scale(1.04);}
+  .seat.me{border-color:#8fe0a0; box-shadow:0 0 0 2px rgba(143,224,160,0.8), 0 10px 26px rgba(0,0,0,0.4);}
+  .seat.no-swap{opacity:.72; cursor:not-allowed;}
   .seat .fav{position:absolute; top:-7px; right:-7px; width:22px;height:22px;border-radius:50%;background:rgba(255,210,127,0.9); color:#3a2c12; font-size:11px; font-weight:700; display:none; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.3);}
   .seat.single .fav{display:flex;}
   .seat.fixed-pair{border-color:rgba(255,210,127,0.85); box-shadow:0 0 0 1px rgba(255,210,127,0.4) inset;}
+  .seat.guard{border-color:rgba(255,210,127,0.9); background:linear-gradient(135deg,rgba(255,210,127,0.32),rgba(255,150,120,0.26));}
+  .seat.ban{border-color:rgba(255,120,120,0.6);}
   .front-note{font-size:11px; color:var(--ink-dim); text-align:center; margin-top:4px;}
   .legend{display:flex; gap:14px; align-items:center; font-size:12px; color:var(--ink-dim); flex-wrap:wrap;}
   .dot{display:inline-block; width:11px;height:11px;border-radius:4px; margin-right:5px; vertical-align:-1px;}
   .legend .g{background:var(--rose-soft); border:1px solid rgba(255,143,176,.6);}
   .legend .b{background:var(--blue-soft); border:1px solid rgba(127,182,255,.6);}
   .legend .m{background:rgba(255,255,255,0.08); border:1px dashed rgba(255,255,255,0.35);}
-  .lock-msg{text-align:center; padding:14px; font-size:12.5px; color:var(--ink-dim); border-radius:14px; background:rgba(255,255,255,0.06); border:1px dashed var(--stroke);}
+  .legend .k{background:rgba(255,210,127,0.4); border:1px solid rgba(255,210,127,.6);}
+  .req-item{background:var(--glass-strong); border:1px solid var(--stroke); border-radius:12px; padding:10px 12px; margin-bottom:8px;}
+  .req-item .who{font-size:13px; font-weight:600;}
+  .req-item .meta{font-size:11px; color:var(--ink-dim); margin:4px 0 8px;}
+  .req-item .btns{display:flex; gap:8px;}
+  .my-seat{display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; background:var(--glass-strong); border:1px solid rgba(143,224,160,0.5); margin-bottom:6px;}
+  .my-seat .lb{font-size:12px; color:var(--ink-dim);}
+  .my-seat .nm{font-size:14px; font-weight:700; color:#b8f0c8;}
+  .login-wrap{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;}
+  .login-card{width:400px; max-width:94vw; padding:36px 32px; text-align:center;}
+  .login-card .logo{width:64px;height:64px;border-radius:20px;background:linear-gradient(135deg,#ff9ac0,#7fb6ff);display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 16px;box-shadow:0 8px 24px rgba(255,150,190,0.45);}
+  .login-card h1{font-size:22px; margin-bottom:4px;}
+  .login-card .sub{font-size:12.5px; color:var(--ink-dim); margin-bottom:24px;}
+  .login-card .field{text-align:left; margin-bottom:14px;}
+  .login-card .field label{font-size:12.5px; color:var(--ink-dim); margin-bottom:6px;}
+  .login-card input{font-size:15px; padding:11px 13px;}
+  .login-hint{font-size:11px; color:var(--ink-dim); margin-top:16px; line-height:1.7; text-align:left;}
+  .user-chip{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:12px; background:var(--glass-strong); border:1px solid var(--stroke);}
+  .user-chip .u{font-size:13px; font-weight:600;}
+  .user-chip .r{font-size:11px; color:var(--ink-dim);}
+  .role-tag{display:inline-block; font-size:10.5px; padding:2px 8px; border-radius:20px; margin-left:6px;}
+  .role-tag.stu{background:rgba(127,182,255,0.3); color:#bfdcff;}
+  .role-tag.tch{background:rgba(255,210,127,0.3); color:#ffe9bd;}
+  .role-tag.adm{background:rgba(255,143,176,0.35); color:#ffc4d6;}
+  .roster-item{display:flex; align-items:center; gap:8px; padding:6px 4px; font-size:12.5px; border-bottom:1px dashed rgba(255,255,255,0.12);}
+  .roster-item .nm{flex:1; text-align:left;}
+  .roster-item .no{width:38px; color:var(--ink-dim);}
+  .roster-item .g{width:22px;}
+  .roster-item .g.f{color:var(--rose);}
+  .roster-item .g.m{color:var(--blue);}
+  .hint-box{font-size:11.5px; color:var(--ink-dim); background:rgba(255,255,255,0.06); border:1px dashed var(--stroke); border-radius:10px; padding:9px 11px; line-height:1.7;}
+  .modal-mask{position:fixed; inset:0; background:rgba(10,10,30,0.55); backdrop-filter:blur(4px); z-index:200; display:flex; align-items:center; justify-content:center;}
+  .modal{width:380px; max-width:90vw; padding:26px 24px; text-align:center;}
+  .modal .m-msg{font-size:15px; line-height:1.7; margin-bottom:20px;}
+  .modal .m-btns{display:flex; gap:10px;}
+  .hide{display:none !important;}
   @media print{
     body{background:#fff !important; color:#111;}
     .panel,.toast,.btn,.no-print,.sync-status{display:none !important;}
@@ -155,18 +197,45 @@
 </style>
 </head>
 <body>
-<div class="app">
+
+<!-- ========== 登录界面 ========== -->
+<div id="loginView" class="login-wrap">
+  <div class="login-card glass">
+    <div class="logo">座</div>
+    <h1>班级排座位</h1>
+    <div class="sub" id="loginSub">2706 高三 · 请输入姓名和学号</div>
+    <div class="field">
+      <label>姓名</label>
+      <input type="text" id="loginName" placeholder="请输入姓名" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>学号</label>
+      <input type="text" id="loginNo" placeholder="请输入学号" autocomplete="off" inputmode="numeric">
+    </div>
+    <button class="btn primary" id="btnLogin" style="font-size:15px; padding:13px;">进入</button>
+    <div class="login-hint">
+      · 学生：输入自己的姓名和学号<br>
+      · 班主任：输入姓名「<b id="hintTeacher">崔孝禹</b>」，学号任意<br>
+      · 管理员：输入姓名「<b>admin</b>」，学号填管理员密码
+    </div>
+  </div>
+</div>
+
+<!-- ========== 主界面 ========== -->
+<div id="appView" class="app hide">
   <aside class="panel glass">
     <div class="brand">
       <div class="logo">座</div>
       <div>
-        <h1>班级排座位 · 在线版</h1>
-        <p>2706 高三 · 实时同步</p>
+        <h1>班级排座位</h1>
+        <p id="brandSub">2706 高三 · 实时同步</p>
       </div>
     </div>
-
     <div id="syncStatus" class="sync-status"><span class="dot-s"></span><span id="syncText">连接中…</span></div>
-
+    <div class="user-chip">
+      <div><span class="u" id="whoami">—</span><span class="role-tag stu" id="roleTag">学生</span></div>
+      <button class="btn mini" id="btnLogout">退出</button>
+    </div>
     <div>
       <div class="sec-title">班级名单</div>
       <div class="stat-row">
@@ -175,72 +244,96 @@
         <div class="stat"><b id="stTotal">0</b><span>学生</span></div>
         <div class="stat seat"><b id="stSeats">0</b><span>座位</span></div>
       </div>
-      <div style="margin-top:10px;" class="btn-row">
-        <div class="btn file-input" style="flex:1;">📥 导入名单<input type="file" id="fileRoster" accept=".xlsx,.csv"></div>
-        <button class="btn small" id="btnResetRoster" style="flex:0 0 auto;">恢复默认</button>
-      </div>
-      <div class="tip">支持 .xlsx / .csv（学号,姓名,性别[,身高]）</div>
     </div>
 
-    <div>
-      <div class="sec-title">调查偏好（可选）</div>
-      <div class="btn file-input">📋 导入调查 CSV<input type="file" id="fileSurvey" accept=".csv"></div>
+    <!-- 我的座位（学生） -->
+    <div id="secMySeat" class="hide">
+      <div class="sec-title">我的座位</div>
+      <div class="my-seat"><span class="lb">当前座位</span><span class="nm" id="mySeatText">—</span></div>
+      <div class="hint-box">点击其他同学的座位，可向他发起「换座申请」，对方同意后即可换座。</div>
     </div>
 
-    <div>
-      <div class="sec-title">排座选项</div>
-      <div class="opt"><span>考虑身高（高个靠后）</span>
-        <label class="switch"><input type="checkbox" id="useHeight" checked><span class="sl"></span></label>
+    <!-- 换座申请（学生+老师+管理员） -->
+    <div id="secRequests">
+      <div class="sec-title">换座申请</div>
+      <div id="reqList"><div class="tip">暂无申请</div></div>
+    </div>
+
+    <!-- 班主任规则面板（老师+管理员） -->
+    <div id="secTeacher" class="hide">
+      <div class="collapse">
+        <div class="sec-title">班主任规则</div>
+        <div style="margin-top:4px;"><label>左右护法（讲台旁，逗号分隔，最多2人）</label><input type="text" id="fixGuards" value="" placeholder="如：沙宇桐,李四"></div>
+        <div style="margin-top:8px;"><label>固定同桌（逗号分隔，每2人一组）</label><input type="text" id="fixPairs" value="杨天雪,徐雨辰"></div>
+        <div style="margin-top:8px;"><label>单人单座（逗号分隔）</label><input type="text" id="fixAlone" value="张千慧"></div>
+        <div style="margin-top:8px;"><label>不可为同桌（逗号分隔，每2人一组）</label><input type="text" id="fixNoDesk" value="" placeholder="如：张三,李四,王五,赵六"></div>
+        <div style="margin-top:10px;" class="btn-row">
+          <button class="btn gold small" id="btnSaveRules">保存规则</button>
+        </div>
+        <div class="tip" style="margin-top:6px;">保存后自动应用到新排位；强制互换无视一切规则。</div>
       </div>
-      <div class="opt"><span>考虑同桌/位置偏好</span>
-        <label class="switch"><input type="checkbox" id="usePref" checked><span class="sl"></span></label>
+      <div class="collapse">
+        <div class="sec-title">强制互换（无视规则）</div>
+        <div class="btn-row" style="margin-top:4px;">
+          <select id="forceA"></select>
+          <select id="forceB"></select>
+        </div>
+        <div style="margin-top:8px;" class="btn-row">
+          <button class="btn gold small" id="btnForceSwap">⇄ 强制互换</button>
+        </div>
       </div>
-      <div class="opt"><span>纯随机</span>
-        <label class="switch"><input type="checkbox" id="randomize"><span class="sl"></span></label>
+      <div class="collapse">
+        <div class="sec-title">排座 / 轮换</div>
+        <div class="opt"><span>考虑身高（高个靠后）</span>
+          <label class="switch"><input type="checkbox" id="useHeight" checked><span class="sl"></span></label>
+        </div>
+        <div class="opt"><span>考虑同桌/位置偏好</span>
+          <label class="switch"><input type="checkbox" id="usePref" checked><span class="sl"></span></label>
+        </div>
+        <div class="opt"><span>纯随机</span>
+          <label class="switch"><input type="checkbox" id="randomize"><span class="sl"></span></label>
+        </div>
+        <div style="margin-top:6px;"><label>优化迭代次数</label><input type="number" id="iterations" value="4000" min="100" step="100"></div>
+        <div style="margin-top:8px;" class="btn-row">
+          <button class="btn primary small" id="btnArrange">✨ 生成排位</button>
+          <button class="btn small" id="btnClear">清空</button>
+        </div>
+        <div style="margin-top:8px;" class="btn-row">
+          <button class="btn small" id="btnRotRow">⬇ 前后轮换</button>
+          <button class="btn small" id="btnRotColKeep">⇄ 左右(保女生列)</button>
+        </div>
+        <div style="margin-top:8px;" class="btn-row">
+          <button class="btn small" id="btnRotColGroup">⤳ 左右大组轮换</button>
+        </div>
       </div>
-      <div style="margin-top:6px;">
-        <label>优化迭代次数</label>
-        <input type="number" id="iterations" value="4000" min="100" step="100">
+      <div class="collapse">
+        <div class="sec-title">导出</div>
+        <div class="btn-row">
+          <button class="btn small" id="btnCsv">📄 导出 CSV</button>
+          <button class="btn small" onclick="window.print()">🖨 打印/存图</button>
+        </div>
       </div>
     </div>
 
-    <div class="collapse">
-      <div class="sec-title">固定座位（班主任要求）</div>
-      <div style="margin-top:4px;"><label>讲台旁单座</label><input type="text" id="fixPodium" value="沙宇桐"></div>
-      <div style="margin-top:8px;"><label>固定同桌（逗号分隔）</label><input type="text" id="fixPairs" value="杨天雪,徐雨辰"></div>
-      <div style="margin-top:8px;"><label>单人单座（逗号分隔）</label><input type="text" id="fixAlone" value="张千慧"></div>
-    </div>
-
-    <div class="btn-row">
-      <button class="btn primary" id="btnArrange">✨ 生成排位</button>
-      <button class="btn" id="btnClear">清空</button>
-    </div>
-    <div class="btn-row">
-      <button class="btn" id="btnRotRow">⬇ 前后轮换</button>
-      <button class="btn" id="btnRotColKeep">⇄ 左右(保女生列)</button>
-    </div>
-    <div class="btn-row">
-      <button class="btn" id="btnRotColGroup">⤳ 左右大组轮换</button>
-      <button class="btn gold" id="btnSave">📤 保存并同步</button>
-    </div>
-
-    <div class="collapse">
-      <div class="sec-title">导出 / 打印</div>
-      <div class="btn-row">
-        <button class="btn" id="btnCsv">📄 导出 CSV</button>
-        <button class="btn" onclick="window.print()">🖨 打印/存图</button>
+    <!-- 管理员面板（仅 admin） -->
+    <div id="secAdmin" class="hide">
+      <div class="collapse">
+        <div class="sec-title">管理员设置</div>
+        <div style="margin-top:4px;"><label>班主任姓名</label><input type="text" id="admTeacher" value=""></div>
+        <div style="margin-top:8px;"><label>修改管理员密码</label><input type="password" id="admPass" placeholder="新密码（留空不改）"></div>
+        <div style="margin-top:8px;" class="btn-row">
+          <button class="btn gold small" id="btnAdmSave">保存设置</button>
+        </div>
       </div>
-    </div>
-
-    <div class="collapse">
-      <div class="sec-title">管理员同步设置</div>
-      <label>GitHub Token（仅保存在本浏览器）</label>
-      <input type="password" id="ghToken" placeholder="ghp_...">
-      <div style="margin-top:8px;" class="btn-row">
-        <button class="btn small" id="btnSaveToken">保存 Token</button>
-        <button class="btn small" id="btnClearToken">清除</button>
+      <div class="collapse">
+        <div class="sec-title">学生名单（共 <span id="rosterCount">0</span> 人）</div>
+        <div class="btn-row" style="margin-bottom:8px;">
+          <button class="btn small" id="btnAddRoster">+ 新增学生</button>
+          <button class="btn small" id="btnImportRoster">📥 导入文件</button>
+          <input type="file" id="fileRoster" accept=".xlsx,.csv" style="display:none;">
+        </div>
+        <div id="rosterList" style="max-height:280px; overflow-y:auto;"></div>
       </div>
-      <div class="tip" style="margin-top:6px;">访客无需 Token 也能实时看到同步后的座位；只有老师（管理员）需要 Token 来“保存并同步”到网站。</div>
     </div>
   </aside>
 
@@ -248,11 +341,12 @@
     <div class="stage-head glass">
       <div>
         <h2 id="stageTitle">座位表</h2>
-        <div class="score" id="scoreBox">尚未生成</div>
+        <div class="score" id="scoreBox">—</div>
       </div>
       <div class="legend">
-        <span><i class="dot g"></i>女生列</span>
+        <span><i class="dot g"></i>女生</span>
         <span><i class="dot b"></i>男生</span>
+        <span><i class="dot k"></i>讲台旁/护法</span>
         <span><i class="dot m"></i>空位</span>
         <span id="layoutDesc"></span>
       </div>
@@ -263,11 +357,20 @@
       <div class="grid" id="grid"></div>
       <div class="front-note" id="frontNote">中间 4 列 × 6 行 · 旁边 4 列 × 5 行 · 两列一组 · 女生一列组（最后一排单人）· 其余列男生</div>
     </div>
-    <div id="viewerMsg" class="lock-msg no-print" style="display:none;">👀 你正在以访客身份实时查看，老师更新后会自动刷新</div>
+    <div id="roleMsg" class="lock-msg no-print" style="display:none;"></div>
   </main>
 </div>
 
 <div class="toast" id="toast"></div>
+<div id="modalMask" class="modal-mask hide">
+  <div class="modal glass">
+    <div class="m-msg" id="modalMsg"></div>
+    <div class="m-btns">
+      <button class="btn primary" id="modalOk">确定</button>
+      <button class="btn" id="modalCancel">取消</button>
+    </div>
+  </div>
+</div>
 <script src="app.js"></script>
 </body>
 </html>
