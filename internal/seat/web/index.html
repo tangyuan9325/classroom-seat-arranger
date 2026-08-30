@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>班级排座位 · 2706 高三</title>
+<style>
+  :root{
+    --glass: rgba(255,255,255,0.10);
+    --glass-strong: rgba(255,255,255,0.16);
+    --stroke: rgba(255,255,255,0.28);
+    --ink: #f2f6ff;
+    --ink-dim: rgba(240,245,255,0.62);
+    --rose: #ff8fb0;
+    --rose-soft: rgba(255,143,176,0.28);
+    --blue: #7fb6ff;
+    --blue-soft: rgba(127,182,255,0.26);
+    --gold: #ffd27f;
+    --radius: 18px;
+    --shadow: 0 8px 32px rgba(20,20,60,0.35);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+    color:var(--ink);
+    min-height:100vh;
+    background:
+      radial-gradient(1200px 700px at 12% -8%, rgba(124,106,255,0.55), transparent 60%),
+      radial-gradient(1000px 600px at 88% 12%, rgba(66,183,255,0.45), transparent 55%),
+      radial-gradient(900px 700px at 50% 110%, rgba(255,96,160,0.40), transparent 60%),
+      linear-gradient(160deg, #1a1c3c 0%, #232554 55%, #1d1f45 100%);
+    background-attachment:fixed;
+  }
+  .glass{
+    background:var(--glass);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    backdrop-filter: blur(22px) saturate(1.4);
+    border:1px solid var(--stroke);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+  }
+  .app{display:flex; gap:18px; padding:18px; max-width:1500px; margin:0 auto; min-height:100vh; align-items:flex-start;}
+  /* ===== 左侧控制面板 ===== */
+  .panel{width:330px; flex-shrink:0; padding:20px; position:sticky; top:18px; display:flex; flex-direction:column; gap:16px; max-height:calc(100vh - 36px); overflow-y:auto;}
+  .panel::-webkit-scrollbar{width:6px;}
+  .panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.2); border-radius:3px;}
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand .logo{width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,#ff9ac0,#7fb6ff);display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 6px 18px rgba(255,150,190,0.4);}
+  .brand h1{font-size:19px; font-weight:700; letter-spacing:.5px;}
+  .brand p{font-size:12px; color:var(--ink-dim); margin-top:2px;}
+  .sec-title{font-size:12px; color:var(--ink-dim); letter-spacing:1px; margin-bottom:8px; text-transform:uppercase;}
+  .stat-row{display:flex; gap:8px;}
+  .stat{flex:1; text-align:center; padding:10px 6px; border-radius:14px; background:var(--glass-strong); border:1px solid var(--stroke);}
+  .stat b{display:block; font-size:22px; font-weight:700;}
+  .stat span{font-size:11px; color:var(--ink-dim);}
+  .stat.girl b{color:var(--rose);}
+  .stat.boy b{color:var(--blue);}
+  .stat.seat b{color:var(--gold);}
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    padding:11px 14px; border-radius:12px; border:1px solid var(--stroke);
+    background:var(--glass-strong); color:var(--ink); font-size:14px; cursor:pointer;
+    transition:transform .12s, background .2s; width:100%; font-family:inherit;
+  }
+  .btn:hover{background:rgba(255,255,255,0.24); transform:translateY(-1px);}
+  .btn.primary{background:linear-gradient(135deg,rgba(255,143,176,.85),rgba(127,182,255,.85)); border:none; font-weight:600; color:#fff;}
+  .btn.primary:hover{filter:brightness(1.08);}
+  .btn.gold{background:linear-gradient(135deg,rgba(255,210,127,.8),rgba(255,150,120,.8)); border:none; color:#fff; font-weight:600;}
+  .btn.small{padding:8px 10px; font-size:12.5px;}
+  .btn-row{display:flex; gap:8px;}
+  .btn-row .btn{flex:1;}
+  .opt{display:flex; align-items:center; justify-content:space-between; padding:8px 4px; font-size:13px; color:var(--ink);}
+  .switch{position:relative; width:40px; height:22px; flex-shrink:0;}
+  .switch input{opacity:0; width:0; height:0;}
+  .sl{position:absolute; cursor:pointer; inset:0; border-radius:22px; background:rgba(255,255,255,0.18); transition:.25s;}
+  .sl:before{content:""; position:absolute; width:16px; height:16px; left:3px; top:3px; border-radius:50%; background:#fff; transition:.25s;}
+  .switch input:checked + .sl{background:linear-gradient(135deg,#ff8fb0,#7fb6ff);}
+  .switch input:checked + .sl:before{transform:translateX(18px);}
+  input[type=number], select{
+    background:rgba(255,255,255,0.14); border:1px solid var(--stroke); color:var(--ink);
+    border-radius:10px; padding:7px 9px; font-size:13px; width:100%; font-family:inherit; outline:none;
+  }
+  input[type=number]:focus, select:focus{border-color:rgba(255,255,255,0.6);}
+  label{font-size:12px; color:var(--ink-dim); display:block; margin-bottom:4px;}
+  .collapse{border-top:1px dashed rgba(255,255,255,0.18); padding-top:12px;}
+  .file-input{position:relative;}
+  .file-input input[type=file]{position:absolute; inset:0; opacity:0; cursor:pointer;}
+  .tip{font-size:11px; color:var(--ink-dim); line-height:1.6;}
+  .toast{
+    position:fixed; top:20px; left:50%; transform:translateX(-50%) translateY(-80px);
+    background:var(--glass-strong); border:1px solid var(--stroke); color:var(--ink);
+    padding:12px 22px; border-radius:14px; backdrop-filter:blur(18px); z-index:99;
+    transition:transform .3s; font-size:14px; box-shadow:var(--shadow);
+  }
+  .toast.show{transform:translateX(-50%) translateY(0);}
+  .toast.err{border-color:rgba(255,120,120,.7);}
+
+  /* ===== 右侧座位区 ===== */
+  .stage{flex:1; min-width:0; display:flex; flex-direction:column; gap:16px;}
+  .stage-head{padding:16px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;}
+  .stage-head h2{font-size:16px; font-weight:600;}
+  .stage-head .score{font-size:12.5px; color:var(--ink-dim);}
+  .board{display:flex; justify-content:center; padding:10px 0;}
+  .board-tag{
+    width:70%; text-align:center; padding:8px; border-radius:12px;
+    background:linear-gradient(135deg,rgba(255,255,255,0.16),rgba(255,255,255,0.08));
+    border:1px solid var(--stroke); font-size:13px; letter-spacing:6px; color:var(--ink-dim);
+  }
+  .grid-wrap{padding:18px; overflow-x:auto;}
+  .grid{display:grid; gap:14px; min-width:880px; margin:0 auto; justify-content:center;}
+  .seat{
+    min-height:88px; border-radius:16px; padding:10px 8px; text-align:center;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    border:1px solid var(--stroke); background:var(--glass);
+    backdrop-filter:blur(16px); cursor:pointer; position:relative; transition:transform .12s, box-shadow .2s, border-color .2s;
+    user-select:none;
+  }
+  .seat:hover{transform:translateY(-3px); box-shadow:0 10px 26px rgba(0,0,0,0.35);}
+  .seat .nm{font-size:15px; font-weight:600;}
+  .seat .sub{font-size:10.5px; color:var(--ink-dim);}
+  .seat.girl{border-color:rgba(255,143,176,0.6); background:var(--rose-soft);}
+  .seat.boy{border-color:rgba(127,182,255,0.6); background:var(--blue-soft);}
+  .seat.empty{background:rgba(255,255,255,0.04); border-style:dashed; cursor:default;}
+  .seat.empty .nm{color:rgba(255,255,255,0.18); font-weight:400;}
+  .seat.middle::after{content:""; position:absolute; inset:3px; border:1px solid rgba(255,255,255,0.10); border-radius:13px; pointer-events:none;}
+  .seat.selected{border-color:#fff; box-shadow:0 0 0 2px rgba(255,255,255,0.9), 0 10px 26px rgba(0,0,0,0.4); transform:translateY(-3px) scale(1.04);}
+  .seat .fav{position:absolute; top:-7px; right:-7px; width:22px;height:22px;border-radius:50%;background:rgba(255,210,127,0.9); color:#3a2c12; font-size:11px; font-weight:700; display:none; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.3);}
+  .seat.single .fav{display:flex;}
+  .rowlabel{font-size:10.5px; color:rgba(255,255,255,0.35); text-align:center;}
+  .front-note{font-size:11px; color:var(--ink-dim); text-align:center; margin-top:4px;}
+  .legend{display:flex; gap:14px; align-items:center; font-size:12px; color:var(--ink-dim); flex-wrap:wrap;}
+  .dot{display:inline-block; width:11px;height:11px;border-radius:4px; margin-right:5px; vertical-align:-1px;}
+  .legend .g{background:var(--rose-soft); border:1px solid rgba(255,143,176,.6);}
+  .legend .b{background:var(--blue-soft); border:1px solid rgba(127,182,255,.6);}
+  .legend .m{background:rgba(255,255,255,0.08); border:1px dashed rgba(255,255,255,0.35);}
+  /* 打印 */
+  @media print{
+    body{background:#fff !important; color:#111;}
+    .panel,.toast,.btn,.no-print{display:none !important;}
+    .seat{background:#fff !important; border:1px solid #999 !important; color:#111 !important; backdrop-filter:none;}
+    .seat.girl{border-color:#e07090 !important;}
+    .seat.boy{border-color:#6a9fe0 !important;}
+    .grid{min-width:0;}
+    .stage{width:100%;}
+  }
+  @media (max-width:1080px){ .app{flex-direction:column;} .panel{position:static; width:100%; max-height:none;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ===== 左侧面板 ===== -->
+  <aside class="panel glass">
+    <div class="brand">
+      <div class="logo">座</div>
+      <div>
+        <h1>班级排座位</h1>
+        <p>2706 高三 · 智能排座系统</p>
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-title">班级名单</div>
+      <div class="stat-row">
+        <div class="stat girl"><b id="stGirls">0</b><span>女生</span></div>
+        <div class="stat boy"><b id="stBoys">0</b><span>男生</span></div>
+        <div class="stat"><b id="stTotal">0</b><span>学生</span></div>
+        <div class="stat seat"><b id="stSeats">0</b><span>座位</span></div>
+      </div>
+      <div style="margin-top:10px;" class="btn-row">
+        <div class="btn file-input" style="flex:1;">📥 导入名单<input type="file" id="fileRoster" accept=".xlsx,.csv"></div>
+        <a class="btn small" style="flex:0 0 auto; text-decoration:none;" href="/api/export/roster-csv" download>模板</a>
+      </div>
+      <div class="tip">支持 .xlsx / .csv（学号,姓名,性别[,身高]）</div>
+    </div>
+
+    <div>
+      <div class="sec-title">调查偏好（可选）</div>
+      <div class="btn file-input">📋 导入调查数据 CSV<input type="file" id="fileSurvey" accept=".csv"></div>
+      <div class="tip" style="margin-top:6px;">列：姓名,性别,期望同桌(用|分隔),单人单桌,前后(-1/0/1),左右(-1/0/1),同桌权重,位置权重,身高</div>
+    </div>
+
+    <div>
+      <div class="sec-title">排座选项</div>
+      <div class="opt"><span>考虑身高（高个靠后）</span>
+        <label class="switch"><input type="checkbox" id="useHeight" checked><span class="sl"></span></label>
+      </div>
+      <div class="opt"><span>考虑同桌/位置偏好</span>
+        <label class="switch"><input type="checkbox" id="usePref" checked><span class="sl"></span></label>
+      </div>
+      <div class="opt"><span>纯随机</span>
+        <label class="switch"><input type="checkbox" id="randomize"><span class="sl"></span></label>
+      </div>
+      <div style="margin-top:6px;">
+        <label>优化迭代次数</label>
+        <input type="number" id="iterations" value="4000" min="100" step="100">
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn primary" id="btnArrange">✨ 生成排位</button>
+      <button class="btn" id="btnClear">清空</button>
+    </div>
+
+    <div>
+      <div class="sec-title">轮换（公平轮换）</div>
+      <div class="btn-row">
+        <button class="btn" id="btnRotRow">⬇ 前后轮换</button>
+        <button class="btn" id="btnRotColKeep">⇄ 左右(保女生列)</button>
+      </div>
+      <div style="margin-top:8px;" class="btn-row">
+        <button class="btn" id="btnRotColGroup">⤳ 左右大组轮换</button>
+      </div>
+    </div>
+
+    <div class="collapse">
+      <div class="sec-title">导出</div>
+      <div class="btn-row">
+        <a class="btn gold" href="/api/export/seat-csv" download>📄 导出 CSV</a>
+        <button class="btn" onclick="window.print()">🖨 打印/存图</button>
+      </div>
+      <div class="tip" style="margin-top:8px;">提示：点击座位选中，再点另一个座位可手动互换；右上角 <span style="color:var(--gold)">单</span> 表示该生要求单人单桌。</div>
+    </div>
+  </aside>
+
+  <!-- ===== 右侧座位区 ===== -->
+  <main class="stage">
+    <div class="stage-head glass">
+      <div>
+        <h2 id="stageTitle">座位表</h2>
+        <div class="score" id="scoreBox">尚未生成</div>
+      </div>
+      <div class="legend">
+        <span><i class="dot g"></i>女生列</span>
+        <span><i class="dot b"></i>男生</span>
+        <span><i class="dot m"></i>空位</span>
+        <span id="layoutDesc" style="font-size:11.5px;"></span>
+      </div>
+    </div>
+    <div class="grid-wrap glass">
+      <div class="board no-print"><div class="board-tag">🏫 讲 台 / 黑 板（前 排）</div></div>
+      <div class="grid" id="grid"></div>
+      <div class="front-note">中间 4 列 × 6 行 · 旁边 4 列 × 5 行 · 女生两列（最后一排单人）· 其余 6 列男生</div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+const $ = id => document.getElementById(id);
+let roster = [];
+let layout = null;
+let current = null;
+let selected = null; // 当前选中的姓名
+
+// ---- 提示 ----
+let toastTimer = null;
+function toast(msg, err=false){
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.className = 'toast', 2600);
+}
+
+// ---- 渲染 ----
+function render(){
+  if(!layout) return;
+  const grid = $('grid');
+  const rows = layout.rows, cols = layout.cols;
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  grid.innerHTML = '';
+  // 行标签
+  for(let r=0;r<rows;r++){
+    const tag = document.createElement('div');
+    tag.className = 'rowlabel';
+    tag.style.gridRow = r*2+1;
+    tag.style.gridColumn = cols+1;
+    // 使用单独布局
+  }
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const cell = cellAt(r,c);
+      const el = document.createElement('div');
+      el.className = 'seat';
+      if(cell && !cell.empty && cell.student){
+        const st = cell.student;
+        const isG = st.gender === '女';
+        el.classList.add(isG?'girl':'boy');
+        if(layout.middle_cols && layout.middle_cols.includes(c)) el.classList.add('middle');
+        if(st.single_desk){ el.classList.add('single'); }
+        const nm = document.createElement('div');
+        nm.className = 'nm'; nm.textContent = st.name;
+        const sub = document.createElement('div');
+        sub.className = 'sub';
+        const info = [];
+        if(st.no) info.push('#'+st.no);
+        info.push(isG?'女':'男');
+        if(st.height) info.push(st.height+'cm');
+        sub.textContent = info.join(' · ');
+        const fav = document.createElement('div');
+        fav.className = 'fav'; fav.textContent = '单';
+        el.append(nm, sub, fav);
+        // 期望同桌 top3 提示
+        if(st.seatmate_pref && st.seatmate_pref.length){
+          el.title = st.name + '（'+(isG?'女':'男')+'）\n期望同桌：' + st.seatmate_pref.slice(0,3).join('、');
+        } else {
+          el.title = st.name + '（'+(isG?'女':'男')+'）';
+        }
+        if(selected === st.name) el.classList.add('selected');
+        el.addEventListener('click', ()=> onSeatClick(st.name, el));
+      } else {
+        el.classList.add('empty');
+        if(layout.middle_cols && layout.middle_cols.includes(c)) el.classList.add('middle');
+        const nm = document.createElement('div');
+        nm.className = 'nm'; nm.textContent = '空';
+        el.append(nm);
+        el.addEventListener('click', ()=> onSeatClick(null, el));
+      }
+      grid.appendChild(el);
+    }
+  }
+  // 统计
+  let g=0,b=0;
+  roster.forEach(s=> s.gender==='女'?g++:b++);
+  $('stGirls').textContent = g;
+  $('stBoys').textContent = b;
+  $('stTotal').textContent = roster.length;
+  $('stSeats').textContent = layout.seats || 44;
+  $('layoutDesc').textContent = `中间${layout.middle_cols.length}列×${layout.rows}行 · 旁${layout.side_cols.length}列×${layout.side_rows}行`;
+  if(current && current.score != null) $('scoreBox').textContent = '优化评分：' + current.score.toFixed(1);
+}
+
+function cellAt(r,c){
+  if(!current) return null;
+  for(const cell of current.grid){
+    if(cell.seat.row === r && cell.seat.col === c) return cell;
+  }
+  return null;
+}
+
+function onSeatClick(name, el){
+  if(name === null){ selected = null; render(); return; }
+  if(!selected){ selected = name; render(); }
+  else if(selected === name){ selected = null; render(); }
+  else {
+    // 交换
+    swap(selected, name);
+    selected = null;
+  }
+}
+
+// ---- API ----
+async function api(path, body, method='POST'){
+  const opt = {method, headers:{'Content-Type':'application/json'}};
+  if(body) opt.body = JSON.stringify(body);
+  const res = await fetch(path, opt);
+  return res.json();
+}
+
+async function arrange(){
+  const body = {
+    randomize: $('randomize').checked,
+    use_height: $('useHeight').checked,
+    use_pref: $('usePref').checked,
+    iterations: parseInt($('iterations').value)||4000,
+    layout
+  };
+  const d = await api('/api/arrange', body);
+  if(d.ok){ current = d.room; render(); toast('已生成排位 ✓'); }
+  else toast(d.error||'生成失败', true);
+}
+
+async function rotate(mode){
+  const d = await api('/api/rotate', {mode});
+  if(d.ok){ current = d.room; render(); toast('已轮换'); }
+  else toast(d.error||'轮换失败', true);
+}
+
+async function swap(n1, n2){
+  const d = await api('/api/swap', {name1:n1, name2:n2});
+  if(d.ok){ current = d.room; render(); }
+  else toast(d.error||'交换失败', true);
+}
+
+async function loadState(){
+  const d = await (await fetch('/api/roster')).json();
+  roster = d.students; layout = d.layout; current = d.current;
+  layout.seats = d.seats;
+  render();
+}
+
+// ---- 导入 ----
+async function upload(file, path, label){
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('name', file.name);
+  const res = await fetch(path, {method:'POST', body:fd});
+  const d = await res.json();
+  if(d.ok){ roster = d.students || roster; await loadState(); toast(label+'导入成功 ✓'); }
+  else toast(d.error||label+'导入失败', true);
+}
+
+$('fileRoster').addEventListener('change', e=>{
+  if(e.target.files[0]) upload(e.target.files[0], '/api/import', '名单');
+  e.target.value='';
+});
+$('fileSurvey').addEventListener('change', e=>{
+  if(e.target.files[0]) upload(e.target.files[0], '/api/import-survey', '调查');
+  e.target.value='';
+});
+$('btnArrange').addEventListener('click', arrange);
+$('btnClear').addEventListener('click', ()=>{ current=null; selected=null; render(); toast('已清空，重新生成即可'); });
+$('btnRotRow').addEventListener('click', ()=> rotate('row'));
+$('btnRotColKeep').addEventListener('click', ()=> rotate('colkeep'));
+$('btnRotColGroup').addEventListener('click', ()=> rotate('colgroup'));
+['useHeight','usePref','randomize'].forEach(id=>{
+  $(id).addEventListener('change', ()=>{
+    if(id==='randomize' && $(id).checked){ $('useHeight').checked=false; $('usePref').checked=false; }
+  });
+});
+
+loadState();
+</script>
+</body>
+</html>
