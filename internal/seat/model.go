@@ -22,11 +22,12 @@ type Student struct {
 	ColPref        int      `json:"col_pref"`        // -1 左侧, 0 中部, +1 右侧
 	WeightSeatmate int      `json:"weight_seatmate"` // 同桌优先度 0-100
 	WeightPos      int      `json:"weight_pos"`      // 位置优先度 0-100
+	AvoidSeatmate  []string `json:"avoid_seatmate"`  // 不希望坐旁边的人（多选）
 }
 
 // HasPref 是否填写了偏好数据。
 func (s *Student) HasPref() bool {
-	return len(s.SeatmatePref) > 0 || s.SingleDesk || s.RowPref != 0 || s.ColPref != 0 ||
+	return len(s.SeatmatePref) > 0 || len(s.AvoidSeatmate) > 0 || s.SingleDesk || s.RowPref != 0 || s.ColPref != 0 ||
 		s.WeightSeatmate > 0 || s.WeightPos > 0
 }
 
@@ -55,29 +56,29 @@ type FixedRules struct {
 
 // Layout 教室布局参数。
 type Layout struct {
-	Rows        int   `json:"rows"`         // 总行数（前后方向）
-	Cols        int   `json:"cols"`         // 总列数（左右方向）
-	MiddleCols  []int `json:"middle_cols"`  // 中间列（列索引从0开始）
-	SideCols    []int `json:"side_cols"`    // 旁边列
-	SideRows    int   `json:"side_rows"`    // 旁边列的排数（少于中间列，空出最后一排旁边）
-	GirlCols    []int `json:"girl_cols"`    // 女生列
-	GirlLastAlone bool `json:"girl_last_alone"` // 女生最后一排单人
-	EmptySide   bool  `json:"empty_side"`   // true=旁边列少最后一排; false=少第一排
-	GroupSize   int   `json:"group_size"`   // 两列一组
-	Fixed       FixedRules `json:"fixed"`   // 固定座位规则
+	Rows          int        `json:"rows"`            // 总行数（前后方向）
+	Cols          int        `json:"cols"`            // 总列数（左右方向）
+	MiddleCols    []int      `json:"middle_cols"`     // 中间列（列索引从0开始）
+	SideCols      []int      `json:"side_cols"`       // 旁边列
+	SideRows      int        `json:"side_rows"`       // 旁边列的排数（少于中间列，空出最后一排旁边）
+	GirlCols      []int      `json:"girl_cols"`       // 女生列
+	GirlLastAlone bool       `json:"girl_last_alone"` // 女生最后一排单人
+	EmptySide     bool       `json:"empty_side"`      // true=旁边列少最后一排; false=少第一排
+	GroupSize     int        `json:"group_size"`      // 两列一组
+	Fixed         FixedRules `json:"fixed"`           // 固定座位规则
 }
 
 // DefaultLayout 默认布局：中间四列六行，旁边四列五行，共44座；两列一组。
 func DefaultLayout() Layout {
 	return Layout{
 		Rows: 6, Cols: 8,
-		MiddleCols:   []int{2, 3, 4, 5},
-		SideCols:     []int{0, 1, 6, 7},
-		SideRows:     5,
-		GirlCols:     []int{4, 5}, // 女生占完整的一个两列组（右中组）
+		MiddleCols:    []int{2, 3, 4, 5},
+		SideCols:      []int{0, 1, 6, 7},
+		SideRows:      5,
+		GirlCols:      []int{4, 5}, // 女生占完整的一个两列组（右中组）
 		GirlLastAlone: true,
-		EmptySide:    true, // 旁边列少最后一排（后排只坐中间）
-		GroupSize:    2,
+		EmptySide:     true, // 旁边列少最后一排（后排只坐中间）
+		GroupSize:     2,
 		Fixed: FixedRules{
 			PodiumSeat: "沙宇桐",
 			FixedPairs: [][]string{{"杨天雪", "徐雨辰"}},
@@ -142,10 +143,10 @@ func (l Layout) IsGirlCol(c int) bool {
 
 // ClassRoom 一次排座的结果。
 type ClassRoom struct {
-	Layout Layout      `json:"layout"`
-	Grid   []SeatCell  `json:"grid"`   // 按行主序
-	Podium []SeatCell  `json:"podium"` // 讲台旁特殊座位（单人单座）
-	Score  float64     `json:"score"`
+	Layout Layout     `json:"layout"`
+	Grid   []SeatCell `json:"grid"`   // 按行主序
+	Podium []SeatCell `json:"podium"` // 讲台旁特殊座位（单人单座）
+	Score  float64    `json:"score"`
 }
 
 // Grid 以行主序返回单元格。

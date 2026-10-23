@@ -16,8 +16,22 @@ const SYNC = {
   apiBase: 'https://api.github.com'
 };
 const pagesUrl = `https://${SYNC.owner}.github.io/${SYNC.repo}/`;
-// 写凭据（混淆存储，运行时还原）。⚠️ 公开仓库任何人可提取，见 docs/README
-const WRITE_TOKEN = atob('Z09zUXgzS1Z4enhhMDRaY2FybVkySDc5c3duTExUUmFITlFMX3BoZw==').split('').reverse().join('');
+// 写凭据：不再内嵌硬编码 token（已失效且公开仓库可被提取）。
+// 首次运行时弹窗输入一个对该仓库有 contents:write 权限的 GitHub PAT，
+// 保存在浏览器 localStorage 中；未设置时以只读模式运行。
+function getWriteToken(promptIfMissing = true) {
+  let t = localStorage.getItem('seat_write_token') || '';
+  if (!t && promptIfMissing) {
+    t = (window.prompt('请输入 GitHub Token（需对 ' + SYNC.owner + '/' + SYNC.repo + ' 有写入权限）。\n留空则以只读模式运行：', '') || '').trim();
+    if (t) localStorage.setItem('seat_write_token', t);
+  }
+  return t;
+}
+function setWriteToken() {
+  const t = (window.prompt('重新设置 GitHub 写入 Token（留空清除）：', '') || '').trim();
+  if (t) localStorage.setItem('seat_write_token', t); else localStorage.removeItem('seat_write_token');
+  return t;
+}
 const DEFAULT_TEACHER = '崔孝禹';
 const DEFAULT_ADMIN_HASH = 'aaffebecec560fec66e75f24062224ffa4e07696d2ae9a1fee3707c3f8fd9373'; // admin888
 const DEFAULT_LAYOUT = {
@@ -44,6 +58,7 @@ let me = null;         // 当前会话 {role, name, no}
 let selected = null;   // 选中的姓名（教师强制互换用）
 let dirty = false;
 let panelTouched = {}; // 规则输入框被用户编辑后不再被轮询覆盖
+let svDraft = null;    // 问卷草稿 {row_pref:number|null, want:string[], avoid:string[]}（学生正在编辑时不被轮询覆盖）
 
 // ---------- 工具 ----------
 const $ = id => document.getElementById(id);
@@ -60,7 +75,7 @@ function setSync(text, ok){
   el.classList.toggle('off', !ok);
   $('syncText').textContent = text;
 }
-function shuffle(a, rng){ for(let i=a.length-1;i>0;i--){ const j=(rng||Math.random)()<0?0:Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 async function sha256hex(str){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -134,6 +149,11 @@ function pairByPref(sts){
     for(const n of (sts[i].seatmate_pref||[])){
       if(idx[n]!==undefined && !paired[n] && idx[n]!==i){ best=idx[n]; break; }
     }
+    // 任一方在问卷中把对方列入「不希望同桌」则不主动配对
+    if(best>=0){
+      const b=sts[best];
+      if((sts[i].avoid_seatmate||[]).includes(b.name) || (b.avoid_seatmate||[]).includes(sts[i].name)) best=-1;
+    }
     if(best>=0){ order.push(sts[best]); paired[sts[best].name]=true; }
     paired[sts[i].name]=true;
   }
@@ -174,7 +194,7 @@ function buildInitial(students, l, opt, rules, fixed){
   for(let i=0;i<rest.length;i+=2){
     if(i+1<rest.length && isForbidden(rest[i].name, rest[i+1].name)){
       for(let j=i+2;j<rest.length;j++){
-        if(!isForbidden(rest[i].name, rest[j].name) && !isForbidden(rest[i+1].name, rest[i+1].name)){
+        if(!isForbidden(rest[i].name, rest[j].name) && !isForbidden(rest[i+1].name, rest[j].name)){
           const t=rest[i+1]; rest[i+1]=rest[j]; rest[j]=t; break;
         }
       }
@@ -208,23 +228,21 @@ function buildInitial(students, l, opt, rules, fixed){
   if(opt.randomize) shuffle(ob);
   else if(opt.use_height) ob.sort((a,b)=>(a.height||0)-(b.height||0));
   // 男生填座时避开不可同桌（启发式）
-  const occupied={};
+  const occupied={}; // seatKey -> 学生对象
   ob.forEach((st,i)=>{
     if(i>=restSeats.length) return;
     let seat=restSeats[i];
-    const nbSeats=neighborSeats(l,seat);
     // 找第一个不会与已有邻居形成禁止同桌的座位
-    let bad=true;
+    let chosen=null;
     for(const cand of [seat].concat(restSeats.slice(i+1))){
       const nb=neighborSeats(l,cand).map(n=>n.row+','+n.col).filter(k=>occupied[k]);
-      const nbNames=nb.map(k=>{ const idx=occupied[k]; return idx!==undefined?ob[idx].name:null; }).filter(Boolean);
-      const clash=nbNames.some(nn=>isForbidden(st.name, nn));
-      if(!clash){ seat=cand; bad=false; break; }
+      const clash=nb.some(k=>isForbidden(st.name, occupied[k].name));
+      if(!clash){ chosen=cand; break; }
     }
-    if(bad) seat=restSeats[i];
-    assign[st.name]=seat;
-    occupied[seat.row+','+seat.col]=i;
-    usedSeat[seat.row+','+seat.col]=true;
+    if(!chosen) chosen=seat;
+    assign[st.name]=chosen;
+    occupied[chosen.row+','+chosen.col]=st;
+    usedSeat[chosen.row+','+chosen.col]=true;
   });
   // 组装
   const grid=layoutSeats(l).map(s=>({seat:s, empty:true, is_middle:isMiddleCol(l,s.col), is_girl_col:isGirlCol(l,s.col)}));
@@ -267,6 +285,9 @@ function score(cr, opt, rules){
           if(prefRank(nbSt.seatmate_pref||[], st.name)!==null) gain*=opt.weights.mutual;
           total += gain * opt.weights.seatmate/100*2;
         }
+        // 问卷「不希望同桌」惩罚：命中邻座即扣分（同桌权重更高）
+        const av = (st.avoid_seatmate||[]).includes(nbSt.name) || (nbSt.avoid_seatmate||[]).includes(st.name);
+        if(av) total -= (areDeskmates(cr.layout, s, nb) ? 2.0 : 1.0) * opt.weights.seatmate/100*2;
       });
     }
     if(opt.use_pref && st.single_desk){
@@ -352,12 +373,26 @@ function rotate(cr, mode){
   }
   const nc=cloneRoom(cr);
   nc.grid.forEach(cell=>{ cell.student=undefined; cell.empty=true; });
+  // 先按列把"原位置学生"落座（保持同桌成对结构），再处理就近落座的溢出学生，避免碰撞丢人
   const occ={};
+  const place=(name,s)=>{
+    const key=s.row+','+s.col;
+    if(occ[key]) return false;
+    const cell=nc.grid.find(c=>c.seat.row===s.row&&c.seat.col===s.col);
+    if(!cell) return false;
+    cell.student=curStu(cr,name); cell.empty=false; occ[key]=true;
+    return true;
+  };
+  const deferred=[];
   for(const name in next){
     const s=next[name];
-    const cell=nc.grid.find(c=>c.seat.row===s.row&&c.seat.col===s.col&&!occ[s.row+','+s.col]);
-    if(cell){ cell.student=curStu(cr,name); cell.empty=false; occ[s.row+','+s.col]=true; }
+    if(s.row===cur[name].row && s.col===cur[name].col){ // 同列轮换（如前后轮换）或原位保留
+      if(!place(name,s)) deferred.push([name,s]);
+    } else {
+      deferred.push([name,s]);
+    }
   }
+  deferred.forEach(([name,s])=>{ if(!place(name,s)) console.warn('轮换落座失败:',name); });
   nc.score=score(nc,{use_pref:true,use_height:true,weights:DEFAULT_WEIGHTS},getRules());
   return nc;
 }
@@ -410,7 +445,8 @@ function stateUrl(){ return `${SYNC.rawBase}/${SYNC.owner}/${SYNC.repo}/${SYNC.b
 function apiUrl(p){ return `${SYNC.apiBase}/repos/${SYNC.owner}/${SYNC.repo}/contents/${p}`; }
 function pagesStateUrl(){ return `${pagesUrl}data/state.json`; }
 async function getStateAPI(){
-  const r=await fetch(apiUrl(SYNC.path), {headers:{Authorization:'Bearer '+WRITE_TOKEN}, cache:'no-store'});
+  const tk=getWriteToken();
+  const r=await fetch(apiUrl(SYNC.path), {headers:tk?{Authorization:'Bearer '+tk}:{}, cache:'no-store'});
   if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.message||('读取失败 '+r.status)); }
   const d=await r.json();
   return {sha:d.sha, state:JSON.parse(decodeURIComponent(escape(atob(d.content))))};
@@ -436,6 +472,7 @@ function normalizeState(st){
   if(!st.teacher_name) st.teacher_name = DEFAULT_TEACHER;
   if(!st.admin_hash) st.admin_hash = DEFAULT_ADMIN_HASH;
   if(!st.pending_requests) st.pending_requests = [];
+  if(!st.survey) st.survey = {};
   return st;
 }
 function applyState(st){
@@ -460,7 +497,10 @@ async function readModifyWrite(mutator){
     next.updated_at=new Date().toISOString();
     const content=btoa(unescape(encodeURIComponent(JSON.stringify(next))));
     const body={message:'update '+new Date().toLocaleString('zh-CN'), content, sha:cur.sha};
-    const r=await fetch(apiUrl(SYNC.path), {method:'PUT', headers:{Authorization:'Bearer '+WRITE_TOKEN,'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const tk=getWriteToken();
+    if(!tk) throw new Error('未设置 GitHub 写入 Token，无法保存。请点击「设置 Token」进行配置。');
+    const r=await fetch(apiUrl(SYNC.path), {method:'PUT', headers:{Authorization:'Bearer '+tk,'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    if(r.status===401||r.status===403){ localStorage.removeItem('seat_write_token'); throw new Error('Token 无效或权限不足（已清除，请重新设置）。'); }
     if(r.ok){ applyState(next); return next; }
     if(r.status===409){ continue; }
     const d=await r.json().catch(()=>({}));
@@ -521,7 +561,7 @@ function renderRequests(){
     meta.textContent='发起于 '+new Date(r.at).toLocaleString('zh-CN',{hour12:false});
     div.append(who, meta);
     const btns=document.createElement('div'); btns.className='btns';
-    const canAct = r.to===me.name || isTeacherOrAdmin();
+    const canAct = me && (r.to===me.name || isTeacherOrAdmin());
     if(canAct){
       const ok=document.createElement('button'); ok.className='btn mini green'; ok.textContent='同意';
       ok.onclick=()=>acceptRequest(r.id);
@@ -552,7 +592,7 @@ async function acceptRequest(id){
   const r=req.find(x=>x.id===id && x.status==='pending');
   if(!r){ toast('申请不存在', true); return; }
   // 若为学生本人同意，也校验规则；老师/管理员同意则无视规则
-  const check=canStudentSwap(r.from, r.to);
+  const check=r.target?{ok:true}:canStudentSwap(r.from, r.to);
   if(!isTeacherOrAdmin() && !check.ok){ toast(check.why, true); return; }
   await readModifyWrite(st=>{
     const rr=st.pending_requests.find(x=>x.id===id);
@@ -630,9 +670,11 @@ async function adminSave(){
   const tname=$('admTeacher').value.trim();
   const pnew=$('admPass').value;
   if(!tname){ toast('班主任姓名不能为空', true); return; }
-  await readModifyWrite(async st=>{
+  // 先在本端计算哈希（mutator 需为同步函数）
+  const hnew = pnew ? await sha256hex(pnew) : null;
+  await readModifyWrite(st=>{
     st.teacher_name=tname;
-    if(pnew){ st.admin_hash=await sha256hex(pnew); }
+    if(hnew){ st.admin_hash=hnew; }
   });
   toast('管理员设置已保存 ✓'+(pnew?'（管理员密码已更新）':''));
   $('admPass').value='';
@@ -656,12 +698,153 @@ function deleteRosterRow(name){
   askConfirm('删除学生「'+name+'」？').then(y=>{ if(y) adminRoster(roster.filter(s=>s.name!==name)); });
 }
 
+// ---------- 问卷调查 ----------
+const SV_ROW_LABEL = {'-1':'前排','0':'中排','1':'后排'};
+function mySurvey(){ return (S && S.survey && S.survey[me.name]) || null; }
+function svDraftFromSaved(){
+  const s=mySurvey();
+  if(s) return {row_pref:(s.row_pref==null?null:s.row_pref), want:(s.seatmate_want||[]).slice(), avoid:(s.seatmate_avoid||[]).slice()};
+  return {row_pref:null, want:[], avoid:[]};
+}
+function renderSurveyForm(){
+  if(!me || me.role!=='student' || !roster.length) return;
+  if(!svDraft) svDraft = svDraftFromSaved();
+  // 位置优先度 chips
+  document.querySelectorAll('#svRowPref .sv-chip').forEach(btn=>{
+    btn.classList.toggle('on', svDraft.row_pref===parseInt(btn.dataset.v));
+    btn.onclick=()=>{ svDraft.row_pref=parseInt(btn.dataset.v); renderSurveyForm(); };
+  });
+  // 两个多选列表（排除自己）
+  const others=roster.slice().sort((a,b)=>(a.no||999)-(b.no||999)).filter(s=>s.name!==me.name);
+  const build=(containerId, list, cls, arrKey)=>{
+    const box=$(containerId); box.innerHTML='';
+    others.forEach(s=>{
+      const lab=document.createElement('label'); lab.className='sv-check'+(cls?' '+cls:'');
+      const cb=document.createElement('input'); cb.type='checkbox';
+      cb.checked=svDraft[arrKey].includes(s.name);
+      if(cb.checked) lab.classList.add('on');
+      cb.addEventListener('change',()=>{
+        if(cb.checked){
+          svDraft[arrKey]=svDraft[arrKey].filter(n=>n!==s.name); svDraft[arrKey].push(s.name); lab.classList.add('on');
+        }else{
+          svDraft[arrKey]=svDraft[arrKey].filter(n=>n!==s.name); lab.classList.remove('on');
+        }
+        updateSvCounts();
+      });
+      const sp=document.createElement('span'); sp.textContent=s.name;
+      lab.append(cb,sp); box.appendChild(lab);
+    });
+  };
+  build('svWantList', others, '', 'want');
+  build('svAvoidList', others, 'avoid', 'avoid');
+  updateSvCounts();
+  const saved=mySurvey();
+  $('svSavedAt').textContent = saved ? ('上次提交：'+new Date(saved.at).toLocaleString('zh-CN')) : '尚未提交问卷';
+}
+function updateSvCounts(){
+  if(!svDraft) return;
+  $('svWantCount').textContent='已选 '+svDraft.want.length+' 人（越晚点击优先级越低）';
+  $('svAvoidCount').textContent='已选 '+svDraft.avoid.length+' 人';
+}
+async function saveSurvey(){
+  if(!me || me.role!=='student') return;
+  if(svDraft.row_pref===null){ toast('请先选择位置优先度（前/中/后排）', true); return; }
+  const payload={ row_pref:svDraft.row_pref, seatmate_want:svDraft.want.slice(), seatmate_avoid:svDraft.avoid.slice(), at:new Date().toISOString() };
+  await readModifyWrite(st=>{ st.survey[me.name]=payload; });
+  svDraft=null; // 用最新保存值重建
+  renderSurveyForm();
+  toast('问卷已提交 ✓ 班主任应用后即可影响排位');
+}
+function resetSurvey(){
+  svDraft={row_pref:null, want:[], avoid:[]};
+  renderSurveyForm();
+  toast('已重置表单（未提交，不影响已保存内容）');
+}
+function renderSurveySummary(){
+  if(!S || !isTeacherOrAdmin()) return;
+  const tb=$('svSummaryTable').querySelector('tbody'); tb.innerHTML='';
+  let done=0;
+  roster.slice().sort((a,b)=>(a.no||999)-(b.no||999)).forEach(s=>{
+    const ans=S.survey && S.survey[s.name];
+    if(ans) done++;
+    const tr=document.createElement('tr');
+    const tdNo=document.createElement('td'); tdNo.textContent=s.no||'—';
+    const tdNm=document.createElement('td'); tdNm.textContent=s.name;
+    const tdPos=document.createElement('td');
+    if(ans){ const t=document.createElement('span'); t.className='sv-tag '+({'-1':'front','0':'mid','1':'back'}[String(ans.row_pref)]||'none'); t.textContent=SV_ROW_LABEL[String(ans.row_pref)]||'未选'; tdPos.appendChild(t); }
+    else { tdPos.textContent='—'; }
+    const mkTags=(arr,cls)=>{
+      const td=document.createElement('td');
+      if(!arr||!arr.length){ const t=document.createElement('span'); t.className='sv-tag none'; t.textContent='无'; td.appendChild(t); }
+      else arr.forEach(n=>{ const t=document.createElement('span'); t.className='sv-tag '+cls; t.textContent=n; td.appendChild(t); });
+      return td;
+    };
+    const tdWant=mkTags(ans&&ans.seatmate_want,'want');
+    const tdAvoid=mkTags(ans&&ans.seatmate_avoid,'avoid');
+    const tdSt=document.createElement('td');
+    if(ans){ tdSt.className='sv-done'; tdSt.textContent='✓ '+new Date(ans.at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+    else { tdSt.className='sv-todo'; tdSt.textContent='未提交'; }
+    tr.append(tdNo,tdNm,tdPos,tdWant,tdAvoid,tdSt); tb.appendChild(tr);
+  });
+  $('svDoneCount').textContent=done;
+  $('svTotalCount').textContent=roster.length;
+}
+// 把 survey 数据应用到 roster（与 Go 端 ApplySurveyToRoster 逻辑一致）
+function applySurveyToRosterData(st){
+  let n=0;
+  st.roster.forEach(s=>{
+    const a=st.survey[s.name];
+    if(a){
+      s.row_pref=a.row_pref;
+      s.seatmate_pref=(a.seatmate_want||[]).slice();
+      s.avoid_seatmate=(a.seatmate_avoid||[]).slice();
+      // 问卷填写即启用偏好：默认优先度 50/50（与 Go 端 ApplySurveyToRoster 一致）
+      if(!s.weight_seatmate && !s.weight_pos){ s.weight_seatmate=50; s.weight_pos=50; }
+      n++;
+    } else {
+      s.seatmate_pref=[]; s.avoid_seatmate=[]; s.row_pref=null;
+    }
+  });
+  return n;
+}
+async function doApplySurvey(){
+  const y=await askConfirm('将全班问卷写入名单偏好？（未提交者会被清空旧偏好）下次「生成排位」自动生效。');
+  if(!y) return;
+  let n=0;
+  await readModifyWrite(st=>{ n=applySurveyToRosterData(st); });
+  renderPanel();
+  toast('已将 '+n+' 份问卷应用到名单 ✓');
+}
+function csvCell(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function downloadText(name, text){
+  const blob=new Blob(['\uFEFF'+text],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+}
+function exportSurveyCSV(){
+  if(!S) return;
+  const lines=['name,no,row_pref,seatmate_want,seatmate_avoid'];
+  roster.slice().sort((a,b)=>(a.no||999)-(b.no||999)).forEach(s=>{
+    const a=S.survey[s.name];
+    if(!a) return;
+    lines.push([csvCell(s.name), s.no||'', (a.row_pref==null?'':a.row_pref), csvCell((a.seatmate_want||[]).join('|')), csvCell((a.seatmate_avoid||[]).join('|'))].join(','));
+  });
+  downloadText('survey_answers.csv', lines.join('\n'));
+  toast('问卷 CSV 已导出（可上传到桌面版「导入问卷」）');
+}
+function exportSurveyTemplate(){
+  const lines=['姓名,学号,位置优先度(-1前排/0中排/1后排),希望同桌(用|分隔),不希望同桌(用|分隔)'];
+  roster.slice().sort((a,b)=>(a.no||999)-(b.no||999)).forEach(s=>lines.push([csvCell(s.name), s.no||'', '', '', ''].join(',')));
+  downloadText('survey_template.csv', lines.join('\n'));
+}
+
 // ---------- UI ----------
 function renderPanel(){
   // 角色相关区块显隐
   $('secMySeat').classList.toggle('hide', !me || me.role!=='student');
-  $('secTeacher').classList.toggle('hide', !isTeacherOrAdmin());
-  $('secAdmin').classList.toggle('hide', !isAdminRole());
+  $('secSurveyStudent').classList.toggle('hide', !me || me.role!=='student');
+  $('secSurveyAdmin').classList.toggle('hide', !isTeacherOrAdmin());
+  if(me && me.role==='student') renderSurveyForm();
+  if(isTeacherOrAdmin()) renderSurveySummary();
   // 用户信息
   if(me){
     $('whoami').textContent = me.role==='admin'?'admin':me.name;
@@ -878,12 +1061,23 @@ async function pollAPI(){
   }catch(e){}
 }
 
+// ---------- 轮询时刷新问卷区（不覆盖学生正在编辑的草稿） ----------
+setInterval(()=>{
+  if(!me) return;
+  if(me.role==='student'){
+    if(!svDraft && S && S.survey){ svDraft = svDraftFromSaved(); renderSurveyForm(); }
+    else { const saved=mySurvey(); $('svSavedAt').textContent = saved ? ('上次提交：'+new Date(saved.at).toLocaleString('zh-CN')) : '尚未提交问卷'; }
+  } else if(isTeacherOrAdmin()){
+    renderSurveySummary();
+  }
+}, 5000);
+
 // ---------- 导入 ----------
 function parseRosterCSV(text){
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
   const out=[];
   lines.forEach((line,i)=>{
-    if(i===0&&/^[,学号no]*姓名.*性别/.test(line)) return;
+    if(i===0&&/^[,学号no\s]*姓名.*性别/.test(line)) return;
     const p=line.split(',').map(x=>x.trim());
     if(p.length<2) return;
     const name=p[1]||p[0];
@@ -947,6 +1141,7 @@ function initEvents(){
   $('loginName').addEventListener('keydown',e=>{ if(e.key==='Enter') $('loginNo').focus(); });
   $('loginNo').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
   $('btnLogout').addEventListener('click',logout);
+  $('btnToken').addEventListener('click',()=>{ const t=setWriteToken(); toast(t?('已保存写入 Token（'+t.slice(0,7)+'…）'):'已清除写入 Token，进入只读模式。'); });
   $('btnSaveRules').addEventListener('click',async()=>{ try{ await saveRules(); }catch(e){ toast('保存失败：'+e.message, true); } });
   ['fixGuards','fixPairs','fixAlone','fixNoDesk'].forEach(id=>{
     $(id).addEventListener('input',()=>{ panelTouched[id]=true; });
@@ -963,6 +1158,12 @@ function initEvents(){
   $('btnAddRoster').addEventListener('click',addRosterRow);
   $('btnImportRoster').addEventListener('click',()=>$('fileRoster').click());
   $('fileRoster').addEventListener('change',async e=>{ if(e.target.files[0]){ try{ await handleRosterFile(e.target.files[0]); }catch(err){ toast('导入失败：'+err.message, true); } } e.target.value=''; });
+  // 问卷调查
+  $('btnSurveySave').addEventListener('click',async()=>{ try{ await saveSurvey(); }catch(e){ toast('提交失败：'+e.message, true); } });
+  $('btnSurveyReset').addEventListener('click',resetSurvey);
+  $('btnSurveyApply').addEventListener('click',async()=>{ try{ await doApplySurvey(); }catch(e){ toast('应用失败：'+e.message, true); } });
+  $('btnSurveyExport').addEventListener('click',exportSurveyCSV);
+  $('btnSurveyTemplate').addEventListener('click',exportSurveyTemplate);
 }
 
 // ---------- 启动 ----------

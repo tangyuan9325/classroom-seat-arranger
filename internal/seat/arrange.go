@@ -7,12 +7,12 @@ import (
 
 // Options 排座选项。
 type Options struct {
-	Randomize bool    // 完全不参考偏好/身高，纯随机
-	UseHeight bool    // 是否考虑身高（高个靠后）
-	UsePref   bool    // 是否使用调查偏好
-	Iterations int    // 优化迭代次数
-	Weights   Weights // 评分权重
-	RNG       *rand.Rand
+	Randomize  bool    // 完全不参考偏好/身高，纯随机
+	UseHeight  bool    // 是否考虑身高（高个靠后）
+	UsePref    bool    // 是否使用调查偏好
+	Iterations int     // 优化迭代次数
+	Weights    Weights // 评分权重
+	RNG        *rand.Rand
 	// 女生列排不满时剩余座位是否由男生补满（默认 true，确保全员入座）
 	FillOverflow bool
 }
@@ -168,8 +168,9 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 	}
 
 	// 4) 分配女生座位
-	assign := map[string]Seat{} // name -> seat
-	usedSeat := map[Seat]bool{}
+	assign := map[string]Seat{}     // name -> seat
+	usedSeat := map[Seat]bool{}     // 已占用（含单人单座预留的同桌空位）
+	assignedSeat := map[Seat]bool{} // 实际坐了人的座位
 	// girlSeatRows 每行：{colA, colB}
 	usedGirlRows := 0
 	for _, slot := range slots {
@@ -182,6 +183,7 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 		if slot.alone {
 			assign[slot.members[0].Name] = Seat{Row: row.row, Col: row.colA}
 			usedSeat[Seat{Row: row.row, Col: row.colA}] = true
+			assignedSeat[Seat{Row: row.row, Col: row.colA}] = true
 			// 同桌位留空：标记为已用（空），不让其他学生坐进来
 			usedSeat[Seat{Row: row.row, Col: row.colB}] = true
 		} else {
@@ -192,17 +194,19 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 				}
 				assign[m.Name] = Seat{Row: row.row, Col: c}
 				usedSeat[Seat{Row: row.row, Col: c}] = true
+				assignedSeat[Seat{Row: row.row, Col: c}] = true
 			}
 		}
 	}
 
-	// 5) 男生放入其余座位（含女生列剩余空位）
+	// 5) 男生放入其余座位（含女生列剩余空位；单人单座预留的同桌空位除外）
 	var restSeats []Seat
 	for _, c := range order {
 		for _, s := range colMap[c] {
-			if !usedSeat[s] {
-				restSeats = append(restSeats, s)
+			if assignedSeat[s] {
+				continue
 			}
+			restSeats = append(restSeats, s)
 		}
 	}
 	ordered := make([]*Student, len(boys))
@@ -223,6 +227,7 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 			break
 		}
 		assign[ordered[i].Name] = s
+		assignedSeat[s] = true
 		usedSeat[s] = true
 	}
 
@@ -311,22 +316,18 @@ func pairByPref(sts []*Student) []*Student {
 		order = append(order, sts[i])
 		// 找最佳配对
 		best := -1
-		if opt := sts[i].SeatmatePref; len(opt) > 0 {
-			for _, n := range opt {
-				if j, ok := idx[n]; ok && !paired[n] && j != i {
-					// 检查互选
-					recip := false
-					for _, n2 := range sts[j].SeatmatePref {
-						if n2 == sts[i].Name {
-							recip = true
-							break
-						}
-					}
-					if recip || true {
-						best = j
-						break
-					}
+		if prefs := sts[i].SeatmatePref; len(prefs) > 0 {
+			for _, n := range prefs {
+				j, ok := idx[n]
+				if !ok || paired[n] || j == i {
+					continue
 				}
+				// 任一方将对方列入“不希望坐旁边”则跳过该配对
+				if avoids(sts[i], sts[j].Name) || avoids(sts[j], sts[i].Name) {
+					continue
+				}
+				best = j
+				break
 			}
 		}
 		if best >= 0 {
@@ -390,6 +391,26 @@ func score(cr *ClassRoom, opt Options) float64 {
 				total += opt.Weights.Single * float64(opt.Weights.Seatmate) / 100.0 * 2
 			}
 		}
+		// 2.5) 不希望同桌：邻座命中名单扣分
+		if opt.UsePref && len(st.AvoidSeatmate) > 0 {
+			w := float64(opt.Weights.Seatmate) / 100.0
+			if w <= 0 {
+				w = 0.5
+			}
+			for _, nb := range cr.Layout.NeighborSeats(s) {
+				ni, ok := idxOfNeighbor(cr, nb)
+				if !ok {
+					continue
+				}
+				nbSt := cr.Grid[ni].Student
+				if nbSt == nil {
+					continue
+				}
+				if avoids(st, nbSt.Name) {
+					total -= 2.0 * w
+				}
+			}
+		}
 		// 3) 位置偏好
 		if opt.UsePref && (st.RowPref != 0 || st.ColPref != 0) {
 			posGain := 0.0
@@ -431,6 +452,16 @@ func idxOfNeighbor(cr *ClassRoom, s Seat) (int, bool) {
 func idxOfNeighborMust(cr *ClassRoom, s Seat) int {
 	i, _ := idxOfNeighbor(cr, s)
 	return i
+}
+
+// avoids 学生 st 是否将 name 列入“不希望坐旁边”。
+func avoids(st *Student, name string) bool {
+	for _, n := range st.AvoidSeatmate {
+		if n == name {
+			return true
+		}
+	}
+	return false
 }
 
 func prefRankOf(pref []string, name string) (int, bool) {

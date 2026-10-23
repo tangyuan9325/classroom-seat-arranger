@@ -16,10 +16,10 @@ var webFS embed.FS
 
 // Server 排座服务状态。
 type Server struct {
-	Students  []Student
-	Layout    Layout
-	Current   *ClassRoom
-	RNG       *rand.Rand
+	Students []Student
+	Layout   Layout
+	Current  *ClassRoom
+	RNG      *rand.Rand
 }
 
 // NewServer 新建服务，载入内置名单与默认布局。
@@ -45,6 +45,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/swap", s.handleSwap)
 	mux.HandleFunc("/api/export/seat-csv", s.handleExportSeatCSV)
 	mux.HandleFunc("/api/export/roster-csv", s.handleExportRosterCSV)
+	mux.HandleFunc("/api/export/survey-template-csv", s.handleExportSurveyTemplateCSV)
+	mux.HandleFunc("/api/export/survey-summary-csv", s.handleExportSurveySummaryCSV)
+	mux.HandleFunc("/api/survey-apply", s.handleSurveyApply)
 	return mux
 }
 
@@ -127,6 +130,7 @@ func (s *Server) handleImportSurvey(w http.ResponseWriter, r *http.Request) {
 	for i := range sts {
 		if c, ok := cur[sts[i].Name]; ok {
 			c.SeatmatePref = sts[i].SeatmatePref
+			c.AvoidSeatmate = sts[i].AvoidSeatmate
 			c.SingleDesk = sts[i].SingleDesk
 			c.RowPref = sts[i].RowPref
 			c.ColPref = sts[i].ColPref
@@ -141,11 +145,11 @@ func (s *Server) handleImportSurvey(w http.ResponseWriter, r *http.Request) {
 }
 
 type arrangeReq struct {
-	Layout     *Layout `json:"layout"`
-	Randomize  bool    `json:"randomize"`
-	UseHeight  bool    `json:"use_height"`
-	UsePref    bool    `json:"use_pref"`
-	Iterations int     `json:"iterations"`
+	Layout     *Layout  `json:"layout"`
+	Randomize  bool     `json:"randomize"`
+	UseHeight  bool     `json:"use_height"`
+	UsePref    bool     `json:"use_pref"`
+	Iterations int      `json:"iterations"`
 	Weights    *Weights `json:"weights"`
 }
 
@@ -246,6 +250,47 @@ func (s *Server) handleExportRosterCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", "attachment; filename=roster_template.csv")
 	w.Write([]byte("\uFEFF"))
 	io.WriteString(w, ExportCSVRoster(s.Students))
+}
+
+// handleExportSurveyTemplateCSV 导出空白问卷模板（线下发放填写）。
+func (s *Server) handleExportSurveyTemplateCSV(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=survey_template.csv")
+	w.Write([]byte("\uFEFF"))
+	io.WriteString(w, ExportSurveyTemplateCSV(s.Students))
+}
+
+// handleExportSurveySummaryCSV 导出当前名单中的问卷汇总。
+func (s *Server) handleExportSurveySummaryCSV(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=survey_summary.csv")
+	w.Write([]byte("\uFEFF"))
+	io.WriteString(w, ExportSurveySummaryCSV(s.Students))
+}
+
+// handleSurveyApply 上传网页问卷导出的 CSV，合并进当前名单。
+func (s *Server) handleSurveyApply(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(20 << 20); err != nil {
+		writeErr(w, "上传解析失败: "+err.Error())
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeErr(w, "缺少文件")
+		return
+	}
+	defer file.Close()
+	answers, err := ParseSurveyAnswersCSV(file)
+	if err != nil {
+		writeErr(w, "解析失败: "+err.Error())
+		return
+	}
+	if len(answers) == 0 {
+		writeErr(w, "未解析到问卷回答")
+		return
+	}
+	s.Students = ApplySurveyToRoster(s.Students, answers)
+	writeJSON(w, map[string]any{"ok": true, "students": s.Students, "applied": len(answers)})
 }
 
 // ===== helpers =====
