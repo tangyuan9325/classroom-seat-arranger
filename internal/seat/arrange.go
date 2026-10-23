@@ -169,7 +169,8 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 
 	// 4) 分配女生座位
 	assign := map[string]Seat{} // name -> seat
-	usedSeat := map[Seat]bool{}
+	usedSeat := map[Seat]bool{} // 已占用（含单人单座预留的同桌空位）
+	assignedSeat := map[Seat]bool{} // 实际坐了人的座位
 	// girlSeatRows 每行：{colA, colB}
 	usedGirlRows := 0
 	for _, slot := range slots {
@@ -182,6 +183,7 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 		if slot.alone {
 			assign[slot.members[0].Name] = Seat{Row: row.row, Col: row.colA}
 			usedSeat[Seat{Row: row.row, Col: row.colA}] = true
+			assignedSeat[Seat{Row: row.row, Col: row.colA}] = true
 			// 同桌位留空：标记为已用（空），不让其他学生坐进来
 			usedSeat[Seat{Row: row.row, Col: row.colB}] = true
 		} else {
@@ -192,17 +194,19 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 				}
 				assign[m.Name] = Seat{Row: row.row, Col: c}
 				usedSeat[Seat{Row: row.row, Col: c}] = true
+				assignedSeat[Seat{Row: row.row, Col: c}] = true
 			}
 		}
 	}
 
-	// 5) 男生放入其余座位（含女生列剩余空位）
+	// 5) 男生放入其余座位（含女生列剩余空位；单人单座预留的同桌空位除外）
 	var restSeats []Seat
 	for _, c := range order {
 		for _, s := range colMap[c] {
-			if !usedSeat[s] {
-				restSeats = append(restSeats, s)
+			if assignedSeat[s] {
+				continue
 			}
+			restSeats = append(restSeats, s)
 		}
 	}
 	ordered := make([]*Student, len(boys))
@@ -223,6 +227,7 @@ func buildInitial(sts []*Student, layout Layout, opt Options) *ClassRoom {
 			break
 		}
 		assign[ordered[i].Name] = s
+		assignedSeat[s] = true
 		usedSeat[s] = true
 	}
 

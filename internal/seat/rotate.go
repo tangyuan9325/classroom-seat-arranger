@@ -115,14 +115,74 @@ func Rotate(cr *ClassRoom, mode Rotation) *ClassRoom {
 	}
 
 	// 应用新座位（保留原有 Student 指针）
+	// 先放置"目标座位与原座位在同一列"的学生（保持前后轮转的成对结构），
+	// 再处理跨列就近落座的学生；若目标座位已被占用则在该列就近找空位，确保不丢人。
+	nc := cloneRoom(cr)
+	for i := range nc.Grid {
+		nc.Grid[i].Student = nil
+		nc.Grid[i].Empty = true
+	}
 	occupied := map[Seat]bool{}
-	for name, ns := range next {
+	place := func(name string, ns Seat) bool {
+		st := studentOf(cr, name)
+		if st == nil {
+			return false
+		}
 		for i := range nc.Grid {
 			if nc.Grid[i].Seat == ns && !occupied[ns] {
-				nc.Grid[i].Student = studentOf(cr, name)
+				nc.Grid[i].Student = st
 				nc.Grid[i].Empty = false
 				occupied[ns] = true
+				return true
+			}
+		}
+		return false
+	}
+	var deferred []struct {
+		name string
+		seat Seat
+	}
+	for name, ns := range next {
+		cs := cur[name]
+		if ns.Col == cs.Col { // 同列移动（RotRow / 女生列内互换 / 原位保留）
+			if !place(name, ns) {
+				deferred = append(deferred, struct {
+					name string
+					seat Seat
+				}{name, ns})
+			}
+		} else {
+			deferred = append(deferred, struct {
+				name string
+				seat Seat
+			}{name, ns})
+		}
+	}
+	for _, d := range deferred {
+		if place(d.name, d.seat) {
+			continue
+		}
+		// 目标被占：在目标列按行距从近到远找空位
+		placed := false
+		cands := append([]Seat{}, colSeats[d.seat.Col]...)
+		sort.SliceStable(cands, func(i, j int) bool {
+			return absInt(cands[i].Row-d.seat.Row) < absInt(cands[j].Row-d.seat.Row)
+		})
+		for _, cnd := range cands {
+			if place(d.name, cnd) {
+				placed = true
 				break
+			}
+		}
+		if !placed { // 最后兜底：任意空位
+			for i := range nc.Grid {
+				if nc.Grid[i].Empty && nc.Grid[i].Student == nil {
+					nc.Grid[i].Student = studentOf(cr, d.name)
+					nc.Grid[i].Empty = false
+					occupied[nc.Grid[i].Seat] = true
+					placed = true
+					break
+				}
 			}
 		}
 	}

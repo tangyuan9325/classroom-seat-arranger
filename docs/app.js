@@ -60,7 +60,7 @@ function setSync(text, ok){
   el.classList.toggle('off', !ok);
   $('syncText').textContent = text;
 }
-function shuffle(a, rng){ for(let i=a.length-1;i>0;i--){ const j=(rng||Math.random)()<0?0:Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 async function sha256hex(str){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -174,7 +174,7 @@ function buildInitial(students, l, opt, rules, fixed){
   for(let i=0;i<rest.length;i+=2){
     if(i+1<rest.length && isForbidden(rest[i].name, rest[i+1].name)){
       for(let j=i+2;j<rest.length;j++){
-        if(!isForbidden(rest[i].name, rest[j].name) && !isForbidden(rest[i+1].name, rest[i+1].name)){
+        if(!isForbidden(rest[i].name, rest[j].name) && !isForbidden(rest[i+1].name, rest[j].name)){
           const t=rest[i+1]; rest[i+1]=rest[j]; rest[j]=t; break;
         }
       }
@@ -208,23 +208,21 @@ function buildInitial(students, l, opt, rules, fixed){
   if(opt.randomize) shuffle(ob);
   else if(opt.use_height) ob.sort((a,b)=>(a.height||0)-(b.height||0));
   // 男生填座时避开不可同桌（启发式）
-  const occupied={};
+  const occupied={}; // seatKey -> 学生对象
   ob.forEach((st,i)=>{
     if(i>=restSeats.length) return;
     let seat=restSeats[i];
-    const nbSeats=neighborSeats(l,seat);
     // 找第一个不会与已有邻居形成禁止同桌的座位
-    let bad=true;
+    let chosen=null;
     for(const cand of [seat].concat(restSeats.slice(i+1))){
       const nb=neighborSeats(l,cand).map(n=>n.row+','+n.col).filter(k=>occupied[k]);
-      const nbNames=nb.map(k=>{ const idx=occupied[k]; return idx!==undefined?ob[idx].name:null; }).filter(Boolean);
-      const clash=nbNames.some(nn=>isForbidden(st.name, nn));
-      if(!clash){ seat=cand; bad=false; break; }
+      const clash=nb.some(k=>isForbidden(st.name, occupied[k].name));
+      if(!clash){ chosen=cand; break; }
     }
-    if(bad) seat=restSeats[i];
-    assign[st.name]=seat;
-    occupied[seat.row+','+seat.col]=i;
-    usedSeat[seat.row+','+seat.col]=true;
+    if(!chosen) chosen=seat;
+    assign[st.name]=chosen;
+    occupied[chosen.row+','+chosen.col]=st;
+    usedSeat[chosen.row+','+chosen.col]=true;
   });
   // 组装
   const grid=layoutSeats(l).map(s=>({seat:s, empty:true, is_middle:isMiddleCol(l,s.col), is_girl_col:isGirlCol(l,s.col)}));
@@ -352,12 +350,26 @@ function rotate(cr, mode){
   }
   const nc=cloneRoom(cr);
   nc.grid.forEach(cell=>{ cell.student=undefined; cell.empty=true; });
+  // 先按列把"原位置学生"落座（保持同桌成对结构），再处理就近落座的溢出学生，避免碰撞丢人
   const occ={};
+  const place=(name,s)=>{
+    const key=s.row+','+s.col;
+    if(occ[key]) return false;
+    const cell=nc.grid.find(c=>c.seat.row===s.row&&c.seat.col===s.col);
+    if(!cell) return false;
+    cell.student=curStu(cr,name); cell.empty=false; occ[key]=true;
+    return true;
+  };
+  const deferred=[];
   for(const name in next){
     const s=next[name];
-    const cell=nc.grid.find(c=>c.seat.row===s.row&&c.seat.col===s.col&&!occ[s.row+','+s.col]);
-    if(cell){ cell.student=curStu(cr,name); cell.empty=false; occ[s.row+','+s.col]=true; }
+    if(s.row===cur[name].row && s.col===cur[name].col){ // 同列轮换（如前后轮换）或原位保留
+      if(!place(name,s)) deferred.push([name,s]);
+    } else {
+      deferred.push([name,s]);
+    }
   }
+  deferred.forEach(([name,s])=>{ if(!place(name,s)) console.warn('轮换落座失败:',name); });
   nc.score=score(nc,{use_pref:true,use_height:true,weights:DEFAULT_WEIGHTS},getRules());
   return nc;
 }
@@ -521,7 +533,7 @@ function renderRequests(){
     meta.textContent='发起于 '+new Date(r.at).toLocaleString('zh-CN',{hour12:false});
     div.append(who, meta);
     const btns=document.createElement('div'); btns.className='btns';
-    const canAct = r.to===me.name || isTeacherOrAdmin();
+    const canAct = me && (r.to===me.name || isTeacherOrAdmin());
     if(canAct){
       const ok=document.createElement('button'); ok.className='btn mini green'; ok.textContent='同意';
       ok.onclick=()=>acceptRequest(r.id);
@@ -552,7 +564,7 @@ async function acceptRequest(id){
   const r=req.find(x=>x.id===id && x.status==='pending');
   if(!r){ toast('申请不存在', true); return; }
   // 若为学生本人同意，也校验规则；老师/管理员同意则无视规则
-  const check=canStudentSwap(r.from, r.to);
+  const check=r.target?{ok:true}:canStudentSwap(r.from, r.to);
   if(!isTeacherOrAdmin() && !check.ok){ toast(check.why, true); return; }
   await readModifyWrite(st=>{
     const rr=st.pending_requests.find(x=>x.id===id);
@@ -630,9 +642,11 @@ async function adminSave(){
   const tname=$('admTeacher').value.trim();
   const pnew=$('admPass').value;
   if(!tname){ toast('班主任姓名不能为空', true); return; }
-  await readModifyWrite(async st=>{
+  // 先在本端计算哈希（mutator 需为同步函数）
+  const hnew = pnew ? await sha256hex(pnew) : null;
+  await readModifyWrite(st=>{
     st.teacher_name=tname;
-    if(pnew){ st.admin_hash=await sha256hex(pnew); }
+    if(hnew){ st.admin_hash=hnew; }
   });
   toast('管理员设置已保存 ✓'+(pnew?'（管理员密码已更新）':''));
   $('admPass').value='';
@@ -883,7 +897,7 @@ function parseRosterCSV(text){
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
   const out=[];
   lines.forEach((line,i)=>{
-    if(i===0&&/^[,学号no]*姓名.*性别/.test(line)) return;
+    if(i===0&&/^[,学号no\s]*姓名.*性别/.test(line)) return;
     const p=line.split(',').map(x=>x.trim());
     if(p.length<2) return;
     const name=p[1]||p[0];
