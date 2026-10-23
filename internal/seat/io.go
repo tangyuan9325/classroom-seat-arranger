@@ -364,6 +364,10 @@ func ApplySurveyToRoster(sts []Student, answers []SurveyAnswers) []Student {
 		}
 		st := &sts[i]
 		st.RowPref = a.RowPref
+		// 问卷填写即视为启用偏好：默认优先度 50/50（用户可经名单 CSV 覆盖）
+		if st.WeightSeatmate == 0 && st.WeightPos == 0 {
+			st.WeightSeatmate, st.WeightPos = 50, 50
+		}
 		seenW := map[string]bool{}
 		for _, n := range a.SeatmateWant {
 			n = strings.TrimSpace(n)

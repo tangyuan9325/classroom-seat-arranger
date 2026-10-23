@@ -798,6 +798,8 @@ function applySurveyToRosterData(st){
       s.row_pref=a.row_pref;
       s.seatmate_pref=(a.seatmate_want||[]).slice();
       s.avoid_seatmate=(a.seatmate_avoid||[]).slice();
+      // 问卷填写即启用偏好：默认优先度 50/50（与 Go 端 ApplySurveyToRoster 一致）
+      if(!s.weight_seatmate && !s.weight_pos){ s.weight_seatmate=50; s.weight_pos=50; }
       n++;
     } else {
       s.seatmate_pref=[]; s.avoid_seatmate=[]; s.row_pref=null;
