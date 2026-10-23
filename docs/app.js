@@ -1041,18 +1041,10 @@ async function requestSwapToEmpty(r,c){
   renderRequests();
 }
 
-// ---------- 轮询 ----------
+// ---------- 同步 ----------
 function syncLabel(st){
   const t=st&&st.updated_at?new Date(st.updated_at).toLocaleTimeString('zh-CN'):'';
   return t?('已同步 · 更新于 '+t):'已连接';
-}
-async function pollCDN(){
-  const chk=document.getElementById('lastCheck');
-  if(chk) chk.textContent='检测于 '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
-  try{
-    const st=await fetchRawState();
-    if(st&&st.version&&new Date(st.updated_at)>new Date(lastSavedAt||0)&&!dirty){ applyState(st); if(me){ render(); renderRequests(); renderPanel(); } setSync(syncLabel(st), true); }
-  }catch(e){}
 }
 async function pollAPI(){
   try{
@@ -1061,8 +1053,28 @@ async function pollAPI(){
   }catch(e){}
 }
 
-// ---------- 轮询时刷新问卷区（不覆盖学生正在编辑的草稿） ----------
-setInterval(()=>{
+// ---------- 同步（手动 + 每分钟自动） ----------
+async function syncNow(){
+  const chk=document.getElementById('lastCheck');
+  if(chk) chk.textContent='检测于 '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
+  setSync('同步中…', true);
+  try{
+    const st=await fetchRawState();
+    if(st&&st.version){
+      if(new Date(st.updated_at)>new Date(lastSavedAt||0)&&!dirty){ applyState(st); if(me){ render(); renderRequests(); renderPanel(); } }
+      refreshSurveyUI();
+      setSync(syncLabel(st), true);
+      toast('已同步 ✓');
+    }
+  }catch(e){ setSync('同步失败', false); }
+}
+// 自动同步：每分钟拉取一次 API（比 CDN 更快捕获交互变更）
+async function autoSync(){
+  await pollAPI();
+  refreshSurveyUI();
+}
+// 刷新问卷区（不覆盖学生正在编辑的草稿）
+function refreshSurveyUI(){
   if(!me) return;
   if(me.role==='student'){
     if(!svDraft && S && S.survey){ svDraft = svDraftFromSaved(); renderSurveyForm(); }
@@ -1070,7 +1082,7 @@ setInterval(()=>{
   } else if(isTeacherOrAdmin()){
     renderSurveySummary();
   }
-}, 5000);
+}
 
 // ---------- 导入 ----------
 function parseRosterCSV(text){
@@ -1141,6 +1153,7 @@ function initEvents(){
   $('loginName').addEventListener('keydown',e=>{ if(e.key==='Enter') $('loginNo').focus(); });
   $('loginNo').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
   $('btnLogout').addEventListener('click',logout);
+  $('btnSync').addEventListener('click',async()=>{ try{ await syncNow(); }catch(e){ toast('同步失败：'+e.message, true); } });
   $('btnToken').addEventListener('click',()=>{ const t=setWriteToken(); toast(t?('已保存写入 Token（'+t.slice(0,7)+'…）'):'已清除写入 Token，进入只读模式。'); });
   $('btnSaveRules').addEventListener('click',async()=>{ try{ await saveRules(); }catch(e){ toast('保存失败：'+e.message, true); } });
   ['fixGuards','fixPairs','fixAlone','fixNoDesk'].forEach(id=>{
@@ -1196,7 +1209,6 @@ function initEvents(){
     }
   }catch(e){}
   renderPanel(); render(); renderRequests();
-  // 轮询：CDN 5s（不限量）+ API 60s（更快捕获交互变更）
-  setInterval(pollCDN, 5000);
-  setInterval(pollAPI, 60000);
+  // 同步：手动按钮 + 自动 1 分钟一次（不再 5 秒高频轮询）
+  setInterval(autoSync, 60000);
 })();
